@@ -1,0 +1,38 @@
+export enum SessionStatus {
+  Active = 'active',
+  Stopped = 'stopped',
+}
+
+export enum MessageType {
+  User = 'user',
+  Assistant = 'assistant',
+  System = 'system',
+}
+
+export interface Message {
+  type: MessageType;
+  content: string;
+  timestamp: string;
+}
+
+export interface Session {
+  id: string;
+  projectPath: string;
+  projectName: string;
+  lastActivity: string;
+  status: SessionStatus;
+  latestMessage?: {
+    type: MessageType;
+    content: string;
+    timestamp: string;
+  };
+  messageCount: number;
+  startTime: string;
+  userPrompt?: string;
+  toolCalls?: Array<{
+    tool: string;
+    timestamp: string;
+    description: string;
+  }>;
+  finalResponse?: string;
+}

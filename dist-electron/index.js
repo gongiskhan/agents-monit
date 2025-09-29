@@ -471,7 +471,19 @@ class SessionMonitor extends events.EventEmitter {
     this.emit("sessions-updated", this.getSessions());
   }
   getSessions() {
-    return Array.from(this.sessions.values()).sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
+    const thirtyMinutesAgo = Date.now() - 30 * 60 * 1e3;
+    const recentSessions = Array.from(this.sessions.values()).filter((session) => {
+      const lastActivityTime = new Date(session.lastActivity).getTime();
+      return lastActivityTime > thirtyMinutesAgo;
+    });
+    const sessionsByProject = /* @__PURE__ */ new Map();
+    for (const session of recentSessions) {
+      const existing = sessionsByProject.get(session.projectPath);
+      if (!existing || new Date(session.lastActivity).getTime() > new Date(existing.lastActivity).getTime()) {
+        sessionsByProject.set(session.projectPath, session);
+      }
+    }
+    return Array.from(sessionsByProject.values()).sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
   }
   getActiveSessions() {
     return this.getSessions().filter((s) => s.status === SessionStatus.Active);

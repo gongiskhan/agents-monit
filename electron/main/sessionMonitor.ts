@@ -340,7 +340,27 @@ export class SessionMonitor extends EventEmitter {
   }
 
   getSessions(): Session[] {
-    return Array.from(this.sessions.values())
+    const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
+
+    // Filter sessions with activity in last 30 minutes
+    const recentSessions = Array.from(this.sessions.values())
+      .filter(session => {
+        const lastActivityTime = new Date(session.lastActivity).getTime();
+        return lastActivityTime > thirtyMinutesAgo;
+      });
+
+    // Deduplicate by projectPath, keeping most recent
+    const sessionsByProject = new Map<string, Session>();
+
+    for (const session of recentSessions) {
+      const existing = sessionsByProject.get(session.projectPath);
+      if (!existing || new Date(session.lastActivity).getTime() > new Date(existing.lastActivity).getTime()) {
+        sessionsByProject.set(session.projectPath, session);
+      }
+    }
+
+    // Return sorted by most recent first
+    return Array.from(sessionsByProject.values())
       .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
   }
 

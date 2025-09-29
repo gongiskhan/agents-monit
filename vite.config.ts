@@ -11,7 +11,7 @@ export default defineConfig({
       {
         entry: 'electron/main/index.ts',
         onstart(options) {
-          options.startup()
+          // Don't auto-start Electron
         },
         vite: {
           build: {
@@ -23,7 +23,7 @@ export default defineConfig({
         },
       },
       {
-        entry: 'electron/preload/index.ts',
+        entry: 'electron/preload.ts',
         onstart(options) {
           options.reload()
         },

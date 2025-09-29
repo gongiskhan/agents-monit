@@ -10,8 +10,14 @@ export const SessionList: React.FC = () => {
 
   const fetchSessions = async () => {
     try {
-      const data = await invoke<Session[]>('get_sessions');
-      setSessions(data);
+      const data = await invoke<Session[]>('get-sessions');
+      // Ensure data is an array before setting it
+      if (Array.isArray(data)) {
+        setSessions(data);
+      } else {
+        console.warn('Received non-array data from get_sessions:', data);
+        setSessions([]);
+      }
       setError(null);
     } catch (err) {
       setError('Error loading sessions');
@@ -26,8 +32,14 @@ export const SessionList: React.FC = () => {
     fetchSessions();
 
     // Set up event listener for updates from backend
-    const unlisten = listen<Session[]>('sessions_updated', (event) => {
-      setSessions(event.payload);
+    const unlisten = listen<Session[]>('sessions-updated', (event) => {
+      // Ensure payload is an array before setting it
+      if (Array.isArray(event.payload)) {
+        setSessions(event.payload);
+      } else {
+        console.warn('Received non-array data from sessions_updated:', event.payload);
+        setSessions([]);
+      }
     });
 
     // Set up polling interval (fallback for events)
@@ -41,9 +53,11 @@ export const SessionList: React.FC = () => {
   }, []);
 
   // Sort sessions by last activity (most recent first)
-  const sortedSessions = [...sessions].sort((a, b) => {
-    return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
-  });
+  const sortedSessions = Array.isArray(sessions)
+    ? [...sessions].sort((a, b) => {
+        return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+      })
+    : [];
 
   if (loading) {
     return (

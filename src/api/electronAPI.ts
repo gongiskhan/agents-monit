@@ -7,19 +7,19 @@ export const invoke = async <T = any>(command: string, args?: any): Promise<T> =
   }
 
   switch (command) {
-    case 'get_sessions':
+    case 'get-sessions':
       return window.electronAPI.invoke('get-sessions') as Promise<T>;
 
-    case 'get_active_sessions':
+    case 'get-active-sessions':
       return window.electronAPI.invoke('get-active-sessions') as Promise<T>;
 
-    case 'refresh_sessions':
+    case 'refresh-sessions':
       return window.electronAPI.invoke('refresh-sessions') as Promise<T>;
 
-    case 'focus_window':
+    case 'focus-window':
       return window.electronAPI.invoke('focus-window', args?.sessionId) as Promise<T>;
 
-    case 'get_session_details':
+    case 'get-session-details':
       return window.electronAPI.invoke('get-session-details', args?.sessionId) as Promise<T>;
 
     default:
@@ -35,7 +35,7 @@ export const listen = <T = any>(
     throw new Error('Electron API not available');
   }
 
-  if (event === 'sessions_updated') {
+  if (event === 'sessions-updated') {
     const unsubscribe = window.electronAPI.on('sessions-updated', (_, data) => {
       callback({ payload: data });
     });

@@ -35,4 +35,5 @@ export interface Session {
     description: string;
   }>;
   finalResponse?: string;
+  source?: 'hook' | 'process' | 'history';
 }

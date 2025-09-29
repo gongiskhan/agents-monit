@@ -1,156 +1,156 @@
 # Claude Code Session Monitor
 
-A Tauri-based desktop application that monitors Claude Code sessions running on your machine, providing real-time status updates and notifications.
+A desktop application built with Electron and React to monitor active Claude Code sessions in real-time.
 
 ## Features
 
-- **Real-time Monitoring**: Tracks all Claude Code sessions (CLI, IDE extensions, desktop apps)
-- **Session Status**: Shows Active (< 30s) or Stopped (≥ 30s) status
-- **Auto-refresh**: Updates every 2 seconds
-- **Notifications**: Alerts when sessions transition from active to stopped
-- **System Tray**: Optional minimize to tray functionality
-- **Session Management**: Supports up to 25 concurrent sessions
-- **History Tracking**: Maintains full session history with user-controlled cleanup
+- ✅ **Real-time Session Monitoring**: Tracks all active Claude Code sessions across your system
+- ✅ **Multiple Detection Methods**:
+  - Process monitoring (detects running Claude instances)
+  - History monitoring (reads from Claude's history file)
+  - Hook monitoring (integrates with your Claude hooks)
+- ✅ **Active Status Indicators**: Green pulsing indicators show active sessions
+- ✅ **Session Details**: Shows project name, path, and last activity
+- ✅ **Settings Panel**: Collapsible settings accessed via gear button
+- ✅ **Auto-refresh**: Updates every 5 seconds
 
 ## Architecture
 
-- **Backend**: Rust with Tauri 2.0
+- **Backend**: Electron with Node.js
 - **Frontend**: React with TypeScript
-- **File Watching**: Uses notify-rs to monitor JSONL files
-- **Async Runtime**: Tokio for concurrent operations
+- **Build Tool**: Vite
+- **File Watching**: Chokidar for monitoring session files
+- **Process Monitoring**: Native process detection via ps/lsof commands
 
 ## Prerequisites
 
-1. **Rust**: Install from [rustup.rs](https://rustup.rs/)
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-
-2. **Node.js**: Version 18+ required
-   ```bash
-   # Install via nvm (recommended)
-   curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-   nvm install 18
-   nvm use 18
-   ```
-
-3. **Tauri CLI**:
-   ```bash
-   npm install -g @tauri-apps/cli
-   ```
+- Node.js 16+
+- npm or yarn
+- macOS (currently optimized for macOS)
 
 ## Installation
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd agents-monit
-   ```
+```bash
+# Clone the repository
+git clone <repository-url>
+cd agents-monit
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Build the Rust backend:
-   ```bash
-   cd src-tauri
-   cargo build
-   cd ..
-   ```
+# Install dependencies
+npm install
+```
 
 ## Development
 
-Run the application in development mode:
+To run the app in development mode:
+
 ```bash
-npm run tauri:dev
+npm run dev
 ```
 
 This will:
-- Start the Vite dev server for the frontend
-- Build and run the Tauri backend
-- Enable hot reload for both frontend and backend changes
+1. Start the Vite dev server on http://localhost:5173
+2. Build the Electron main and preload scripts
+3. Launch the Electron desktop app
 
-## Building
+**Important**: The app only works in the Electron window, not in a regular browser. If you see "Electron API not available" errors in your browser, that's normal - look for the Electron app window that opens automatically.
 
-Build the application for production:
+## Building for Production
+
 ```bash
-npm run tauri:build
+npm run build
 ```
 
-This creates platform-specific installers in `src-tauri/target/release/bundle/`.
+This creates a distributable application in the `dist/` folder.
 
-## Testing
+## How It Works
 
-### Frontend Tests
-```bash
-npm test
-```
+The app monitors Claude Code sessions through three complementary methods:
 
-### Backend Tests
-```bash
-cd src-tauri
-cargo test
-cd ..
-```
+1. **Process Monitoring**: Scans for running Claude processes every 5 seconds
+2. **History Monitoring**: Watches `~/.claude/history.jsonl` for activity
+3. **Hook Monitoring**: Reads session files from `~/.claude/active_sessions/`
+
+Sessions are marked as "active" if they've had activity within the last 5 minutes.
 
 ## Project Structure
 
 ```
 agents-monit/
-├── src/                    # React frontend
-│   ├── components/         # React components
-│   ├── types/              # TypeScript type definitions
+├── electron/                 # Electron backend
+│   ├── main/                # Main process code
+│   │   ├── index.ts         # Electron main entry point
+│   │   ├── sessionMonitor.ts    # Core monitoring logic
+│   │   ├── claudeProcessMonitor.ts  # Process & history monitoring
+│   │   └── types.ts         # TypeScript types
+│   └── preload.ts           # Preload script for IPC
+├── src/                     # React frontend
+│   ├── components/          # UI components
+│   │   ├── Header.tsx       # App header
+│   │   ├── SessionList.tsx # Session display
+│   │   ├── SessionCard.tsx # Individual session cards
+│   │   ├── StatusBar.tsx   # Status bar
+│   │   └── NotificationSettings.tsx # Settings panel
+│   ├── utils/               # Utilities
+│   │   └── electronAPI.ts  # Electron IPC wrapper
 │   ├── App.tsx             # Main app component
 │   └── main.tsx            # Entry point
-├── src-tauri/              # Rust backend
-│   ├── src/
-│   │   ├── commands.rs     # Tauri commands
-│   │   ├── monitor.rs      # Session monitoring logic
-│   │   ├── parser.rs       # JSONL parsing
-│   │   ├── session.rs      # Session data structures
-│   │   ├── state.rs        # Application state management
-│   │   └── main.rs         # Tauri app entry point
-│   └── tests/              # Rust tests
-└── tests/                  # Frontend test files
+├── dist-electron/          # Built Electron files
+├── dist/                   # Built app for distribution
+└── package.json            # Project configuration
 ```
 
-## How It Works
+## Available Scripts
 
-1. **File Monitoring**: Watches `~/.claude/projects/` for JSONL session files
-2. **Session Detection**: Identifies sessions by parsing `session-{id}.jsonl` files
-3. **Status Updates**: Tracks last activity timestamp to determine active/stopped status
-4. **Real-time Updates**: Refreshes every 2 seconds and responds to file changes
-5. **Notifications**: Sends desktop notifications when sessions stop
-
-## Configuration
-
-Settings are stored in localStorage and include:
-- Enable/disable notifications
-- Sound alerts
-- Minimize to tray preference
+- `npm run dev` - Start development server with Electron
+- `npm run build` - Build for production
+- `npm run dev:vite` - Start only Vite dev server
+- `npm run dev:electron` - Start only Electron (requires Vite running)
+- `npm run electron` - Launch Electron with built files
 
 ## Troubleshooting
 
-### Application won't start
-- Ensure Rust and Node.js are properly installed
-- Check that all dependencies are installed: `npm install`
-- Verify Tauri prerequisites: `npm run tauri info`
+### App doesn't show sessions
+- Ensure Claude Code is running
+- Check that `~/.claude/` directory exists
+- Verify process monitoring permissions
+- Look in the Electron app window's console for any errors
 
-### Sessions not detected
-- Verify Claude Code is installed and running
-- Check that `~/.claude/projects/` directory exists
-- Ensure proper file permissions
+### "Electron API not available" error in browser
+- This is expected behavior when viewing http://localhost:5173 in a browser
+- The app only works in the Electron desktop window
+- Look for the separate Electron app window that opens automatically
 
-### Build failures
-- Clear build cache: `rm -rf src-tauri/target dist node_modules`
-- Reinstall dependencies: `npm install`
-- Update Rust toolchain: `rustup update`
+### Port 5173 already in use
+```bash
+# Kill any existing Vite processes
+pkill -f vite
+
+# Or kill all Electron processes
+pkill -f electron
+```
+
+### Electron window not opening
+- Check the terminal output for errors
+- Ensure the preload script is built: `ls -la dist-electron/`
+- Try rebuilding: `rm -rf dist-electron && npm run dev`
+
+### Sessions show as inactive when they're running
+- The app uses a 5-minute threshold for active status
+- Check that process monitoring is working in the console logs
+- Verify your Claude hooks are properly configured
+
+## Technologies Used
+
+- **Electron**: Desktop app framework
+- **React + TypeScript**: Frontend UI
+- **Vite**: Build tool and dev server
+- **Chokidar**: File watching
+- **IPC (Inter-Process Communication)**: Communication between main and renderer processes
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please read the development guidelines and submit pull requests to the main repository.

@@ -8,7 +8,7 @@ export const Header: React.FC = () => {
 
   const updateSessionCounts = async () => {
     try {
-      const sessions = await invoke<Session[]>('get_sessions');
+      const sessions = await invoke<Session[]>('get-sessions');
       const active = sessions.filter(s => s.status === SessionStatus.Active).length;
       setActiveSessions(active);
       setTotalSessions(sessions.length);
@@ -25,7 +25,7 @@ export const Header: React.FC = () => {
 
   const handleRefresh = async () => {
     try {
-      await invoke('refresh_sessions');
+      await invoke('refresh-sessions');
       await updateSessionCounts();
     } catch (error) {
       console.error('Failed to refresh sessions:', error);

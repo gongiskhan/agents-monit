@@ -1,12 +1,12 @@
 export enum SessionStatus {
-  Active = 'Active',
-  Stopped = 'Stopped',
+  Active = 'active',
+  Stopped = 'stopped',
 }
 
 export enum MessageType {
-  User = 'User',
-  Assistant = 'Assistant',
-  System = 'System',
+  User = 'user',
+  Assistant = 'assistant',
+  System = 'system',
 }
 
 export interface Message {

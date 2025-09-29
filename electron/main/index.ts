@@ -12,7 +12,7 @@ async function createWindow() {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/index.js'),
+      preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
     },
@@ -24,6 +24,13 @@ async function createWindow() {
   if (isDev) {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
+
+    // Prevent navigation to other URLs
+    mainWindow.webContents.on('will-navigate', (event, url) => {
+      if (!url.startsWith('http://localhost:5173')) {
+        event.preventDefault();
+      }
+    });
   } else {
     mainWindow.loadFile(path.join(__dirname, '../../dist/index.html'));
   }
@@ -34,13 +41,14 @@ async function createWindow() {
 }
 
 app.whenReady().then(async () => {
-  // Initialize session monitor
+  // Initialize session monitor FIRST
   sessionMonitor = new SessionMonitor();
-  await sessionMonitor.startWatching();
 
-  // Set up IPC handlers
+  // Set up IPC handlers BEFORE creating window
   ipcMain.handle('get-sessions', () => {
-    return sessionMonitor?.getSessions() || [];
+    const sessions = sessionMonitor?.getSessions() || [];
+    console.log('get-sessions called, returning', sessions.length, 'sessions');
+    return sessions;
   });
 
   ipcMain.handle('get-active-sessions', () => {
@@ -70,6 +78,10 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Start watching BEFORE creating window
+  await sessionMonitor.startWatching();
+
+  // NOW create the window
   createWindow();
 });
 

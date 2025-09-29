@@ -38,11 +38,11 @@ export const Header: React.FC = () => {
         <div className="header-title">
           <h1>Claude Code Monitor</h1>
           <div className="status-badges non-draggable">
-            <span className="badge badge-active">
-              {activeSessions} Active
+            <span className="badge badge-active" title={`${activeSessions} active sessions`}>
+              {activeSessions}
             </span>
-            <span className="badge badge-total">
-              {totalSessions} Total
+            <span className="badge badge-total" title={`${totalSessions} total sessions`}>
+              {totalSessions}
             </span>
           </div>
         </div>
@@ -52,7 +52,18 @@ export const Header: React.FC = () => {
             onClick={handleRefresh}
             aria-label="Refresh sessions"
           >
-            🔄 Refresh
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
           </button>
         </div>
       </div>

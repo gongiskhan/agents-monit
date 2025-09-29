@@ -100,7 +100,6 @@ export const SessionList: React.FC = () => {
   return (
     <div className="session-list">
       <div className="session-list-header">
-        <h2>Claude Code Sessions</h2>
         <span className="session-count">
           {sessions.length} session{sessions.length !== 1 ? 's' : ''}
         </span>

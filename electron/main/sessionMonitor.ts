@@ -252,24 +252,52 @@ export class SessionMonitor extends EventEmitter {
     for (const ps of processSessions) {
       const sessionId = `process-${ps.pid}`;
 
-      // For active processes, always use current time as lastActivity
-      const lastActivity = ps.status === 'active'
-        ? new Date().toISOString()
-        : (ps.lastSeen || new Date().toISOString());
+      // Check if we have hook or history data for this project to get real lastActivity
+      let realLastActivity: Date | null = null;
+      let hasHookData = false;
+
+      // Look for hook sessions from the same project
+      for (const [existingId, existingSession] of this.sessions.entries()) {
+        if (existingSession.source === 'hook' &&
+            existingSession.projectPath === ps.projectPath) {
+          realLastActivity = new Date(existingSession.lastActivity);
+          hasHookData = true;
+          break;
+        }
+      }
+
+      // Determine true activity status based on real last activity
+      let status: SessionStatus;
+      let lastActivity: string;
+
+      if (ps.status === 'stopped') {
+        // Process is not running
+        status = SessionStatus.Stopped;
+        lastActivity = ps.lastSeen || new Date().toISOString();
+      } else if (hasHookData && realLastActivity) {
+        // Process is running and we have hook data - check if truly active
+        const secondsSinceActivity = (Date.now() - realLastActivity.getTime()) / 1000;
+        status = secondsSinceActivity < 300 ? SessionStatus.Active : SessionStatus.Stopped;
+        lastActivity = realLastActivity.toISOString();
+      } else {
+        // Process is running but no hook data - consider it stopped (idle)
+        status = SessionStatus.Stopped;
+        lastActivity = ps.lastSeen || new Date().toISOString();
+      }
 
       const session: Session = {
         id: sessionId,
         projectPath: ps.projectPath,
         projectName: ps.projectName,
         lastActivity: lastActivity,
-        status: ps.status === 'active' ? SessionStatus.Active : SessionStatus.Stopped,
+        status: status,
         latestMessage: undefined,
         messageCount: 0,
         startTime: ps.startTime,
         source: 'process'
       };
 
-      console.log(`Process session ${ps.projectName}: status=${ps.status}, lastActivity=${lastActivity}`);
+      console.log(`Process session ${ps.projectName}: status=${status}, lastActivity=${lastActivity}, hasHookData=${hasHookData}`);
 
       // Always update process sessions to keep them current
       this.sessions.set(sessionId, session);
@@ -281,19 +309,19 @@ export class SessionMonitor extends EventEmitter {
     for (const hs of historySessions) {
       const sessionId = `history-${path.basename(hs.projectPath)}`;
 
-      // Don't overwrite hook-created sessions
+      // Don't overwrite hook-created sessions or process sessions
       if (!this.sessions.has(sessionId)) {
-        // For active history sessions, use current time
-        const lastActivity = hs.status === 'active'
-          ? new Date().toISOString()
-          : hs.lastActivity;
+        // Check if there's recent activity (within 5 minutes)
+        const lastActivityDate = new Date(hs.lastActivity);
+        const secondsSinceActivity = (Date.now() - lastActivityDate.getTime()) / 1000;
+        const isRecentlyActive = secondsSinceActivity < 300;
 
         const session: Session = {
           id: sessionId,
           projectPath: hs.projectPath,
           projectName: hs.projectName,
-          lastActivity: lastActivity,
-          status: hs.status === 'active' ? SessionStatus.Active : SessionStatus.Stopped,
+          lastActivity: hs.lastActivity,
+          status: isRecentlyActive ? SessionStatus.Active : SessionStatus.Stopped,
           latestMessage: hs.latestCommand ? {
             type: MessageType.User,
             content: hs.latestCommand.substring(0, 200),
@@ -304,7 +332,7 @@ export class SessionMonitor extends EventEmitter {
           source: 'history'
         };
 
-        console.log(`History session ${hs.projectName}: status=${hs.status}, lastActivity=${lastActivity}`);
+        console.log(`History session ${hs.projectName}: status=${session.status}, lastActivity=${hs.lastActivity}, secondsSince=${Math.round(secondsSinceActivity)}`);
         this.sessions.set(sessionId, session);
       }
     }

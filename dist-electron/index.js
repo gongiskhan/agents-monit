@@ -404,19 +404,40 @@ class SessionMonitor extends events.EventEmitter {
   mergeProcessSessions(processSessions) {
     for (const ps of processSessions) {
       const sessionId = `process-${ps.pid}`;
-      const lastActivity = ps.status === "active" ? (/* @__PURE__ */ new Date()).toISOString() : ps.lastSeen || (/* @__PURE__ */ new Date()).toISOString();
+      let realLastActivity = null;
+      let hasHookData = false;
+      for (const [existingId, existingSession] of this.sessions.entries()) {
+        if (existingSession.source === "hook" && existingSession.projectPath === ps.projectPath) {
+          realLastActivity = new Date(existingSession.lastActivity);
+          hasHookData = true;
+          break;
+        }
+      }
+      let status;
+      let lastActivity;
+      if (ps.status === "stopped") {
+        status = SessionStatus.Stopped;
+        lastActivity = ps.lastSeen || (/* @__PURE__ */ new Date()).toISOString();
+      } else if (hasHookData && realLastActivity) {
+        const secondsSinceActivity = (Date.now() - realLastActivity.getTime()) / 1e3;
+        status = secondsSinceActivity < 300 ? SessionStatus.Active : SessionStatus.Stopped;
+        lastActivity = realLastActivity.toISOString();
+      } else {
+        status = SessionStatus.Stopped;
+        lastActivity = ps.lastSeen || (/* @__PURE__ */ new Date()).toISOString();
+      }
       const session = {
         id: sessionId,
         projectPath: ps.projectPath,
         projectName: ps.projectName,
         lastActivity,
-        status: ps.status === "active" ? SessionStatus.Active : SessionStatus.Stopped,
+        status,
         latestMessage: void 0,
         messageCount: 0,
         startTime: ps.startTime,
         source: "process"
       };
-      console.log(`Process session ${ps.projectName}: status=${ps.status}, lastActivity=${lastActivity}`);
+      console.log(`Process session ${ps.projectName}: status=${status}, lastActivity=${lastActivity}, hasHookData=${hasHookData}`);
       this.sessions.set(sessionId, session);
     }
     this.emit("sessions-updated", this.getSessions());
@@ -425,13 +446,15 @@ class SessionMonitor extends events.EventEmitter {
     for (const hs of historySessions) {
       const sessionId = `history-${path__namespace.basename(hs.projectPath)}`;
       if (!this.sessions.has(sessionId)) {
-        const lastActivity = hs.status === "active" ? (/* @__PURE__ */ new Date()).toISOString() : hs.lastActivity;
+        const lastActivityDate = new Date(hs.lastActivity);
+        const secondsSinceActivity = (Date.now() - lastActivityDate.getTime()) / 1e3;
+        const isRecentlyActive = secondsSinceActivity < 300;
         const session = {
           id: sessionId,
           projectPath: hs.projectPath,
           projectName: hs.projectName,
-          lastActivity,
-          status: hs.status === "active" ? SessionStatus.Active : SessionStatus.Stopped,
+          lastActivity: hs.lastActivity,
+          status: isRecentlyActive ? SessionStatus.Active : SessionStatus.Stopped,
           latestMessage: hs.latestCommand ? {
             type: MessageType.User,
             content: hs.latestCommand.substring(0, 200),
@@ -441,7 +464,7 @@ class SessionMonitor extends events.EventEmitter {
           startTime: hs.startTime,
           source: "history"
         };
-        console.log(`History session ${hs.projectName}: status=${hs.status}, lastActivity=${lastActivity}`);
+        console.log(`History session ${hs.projectName}: status=${session.status}, lastActivity=${hs.lastActivity}, secondsSince=${Math.round(secondsSinceActivity)}`);
         this.sessions.set(sessionId, session);
       }
     }

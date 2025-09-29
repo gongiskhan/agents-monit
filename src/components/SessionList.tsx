@@ -6,9 +6,10 @@ import { SessionCard } from './SessionCard';
 export const SessionList: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSessions = async () => {
+  const fetchSessions = async (isInitialLoad = false) => {
     try {
       const data = await invoke<Session[]>('get-sessions');
       // Ensure data is an array before setting it
@@ -23,19 +24,23 @@ export const SessionList: React.FC = () => {
       setError('Error loading sessions');
       console.error('Failed to fetch sessions:', err);
     } finally {
-      setLoading(false);
+      if (isInitialLoad) {
+        setLoading(false);
+        setHasLoaded(true);
+      }
     }
   };
 
   useEffect(() => {
     // Initial fetch
-    fetchSessions();
+    fetchSessions(true);
 
     // Set up event listener for updates from backend
     const unlisten = listen<Session[]>('sessions-updated', (event) => {
       // Ensure payload is an array before setting it
       if (Array.isArray(event.payload)) {
         setSessions(event.payload);
+        setHasLoaded(true);
       } else {
         console.warn('Received non-array data from sessions_updated:', event.payload);
         setSessions([]);
@@ -43,7 +48,7 @@ export const SessionList: React.FC = () => {
     });
 
     // Set up polling interval (fallback for events)
-    const interval = setInterval(fetchSessions, 2000);
+    const interval = setInterval(() => fetchSessions(false), 2000);
 
     // Cleanup
     return () => {
@@ -72,14 +77,14 @@ export const SessionList: React.FC = () => {
     return (
       <div className="error-container">
         <p className="error-message">{error}</p>
-        <button onClick={fetchSessions} className="retry-button">
+        <button onClick={() => fetchSessions(true)} className="retry-button">
           Retry
         </button>
       </div>
     );
   }
 
-  if (sessions.length === 0) {
+  if (hasLoaded && sessions.length === 0) {
     return (
       <div className="empty-state">
         <div className="empty-icon">📋</div>

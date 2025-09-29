@@ -6,7 +6,6 @@ import { SessionCard } from './SessionCard';
 export const SessionList: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
-  const [hasLoaded, setHasLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessions = async (isInitialLoad = false) => {
@@ -14,10 +13,16 @@ export const SessionList: React.FC = () => {
       const data = await invoke<Session[]>('get-sessions');
       // Ensure data is an array before setting it
       if (Array.isArray(data)) {
-        setSessions(data);
+        // Only update sessions if we got valid data
+        if (data.length > 0 || isInitialLoad) {
+          setSessions(data);
+          console.log('Fetched sessions:', data.length, 'Active:', data.filter(s => s.status === 'active').length);
+        }
       } else {
         console.warn('Received non-array data from get_sessions:', data);
-        setSessions([]);
+        if (isInitialLoad) {
+          setSessions([]);
+        }
       }
       setError(null);
     } catch (err) {
@@ -26,7 +31,6 @@ export const SessionList: React.FC = () => {
     } finally {
       if (isInitialLoad) {
         setLoading(false);
-        setHasLoaded(true);
       }
     }
   };
@@ -40,10 +44,9 @@ export const SessionList: React.FC = () => {
       // Ensure payload is an array before setting it
       if (Array.isArray(event.payload)) {
         setSessions(event.payload);
-        setHasLoaded(true);
+        console.log('Event updated sessions:', event.payload.length, 'Active:', event.payload.filter(s => s.status === 'active').length);
       } else {
         console.warn('Received non-array data from sessions_updated:', event.payload);
-        setSessions([]);
       }
     });
 
@@ -84,7 +87,7 @@ export const SessionList: React.FC = () => {
     );
   }
 
-  if (hasLoaded && sessions.length === 0) {
+  if (!loading && sessions.length === 0) {
     return (
       <div className="empty-state">
         <div className="empty-icon">📋</div>

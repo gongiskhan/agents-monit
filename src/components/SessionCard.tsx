@@ -7,6 +7,13 @@ interface SessionCardProps {
 }
 
 export const SessionCard: React.FC<SessionCardProps> = ({ session }) => {
+  // Debug log to see what status we're receiving
+  React.useEffect(() => {
+    if (session.status === 'active') {
+      console.log(`Active session card: ${session.projectName} - status: ${session.status}`);
+    }
+  }, [session.status, session.projectName]);
+
   const handleClick = async () => {
     try {
       await invoke('focus_window', { sessionId: session.id });

@@ -359,9 +359,16 @@ export class SessionMonitor extends EventEmitter {
       }
     }
 
-    // Return sorted by most recent first
+    // Return sorted by active status first, then by most recent activity
     return Array.from(sessionsByProject.values())
-      .sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
+      .sort((a, b) => {
+        // Active sessions come first
+        if (a.status !== b.status) {
+          return a.status === SessionStatus.Active ? -1 : 1;
+        }
+        // Within same status, sort by most recent first
+        return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+      });
   }
 
   getActiveSessions(): Session[] {

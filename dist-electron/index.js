@@ -483,7 +483,12 @@ class SessionMonitor extends events.EventEmitter {
         sessionsByProject.set(session.projectPath, session);
       }
     }
-    return Array.from(sessionsByProject.values()).sort((a, b) => new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime());
+    return Array.from(sessionsByProject.values()).sort((a, b) => {
+      if (a.status !== b.status) {
+        return a.status === SessionStatus.Active ? -1 : 1;
+      }
+      return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+    });
   }
   getActiveSessions() {
     return this.getSessions().filter((s) => s.status === SessionStatus.Active);

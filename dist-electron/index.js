@@ -262,6 +262,231 @@ class ClaudeHistoryMonitor extends events.EventEmitter {
     fs__namespace.unwatchFile(this.historyPath);
   }
 }
+class CodexMonitor extends events.EventEmitter {
+  constructor() {
+    super();
+    __publicField(this, "codexDir");
+    __publicField(this, "historyFile");
+    __publicField(this, "sessionsDir");
+    __publicField(this, "historyFileSize", 0);
+    __publicField(this, "sessions", /* @__PURE__ */ new Map());
+    __publicField(this, "watchInterval", null);
+    __publicField(this, "sessionFilesWatched", /* @__PURE__ */ new Set());
+    this.codexDir = path__namespace.join(os__namespace.homedir(), ".codex");
+    this.historyFile = path__namespace.join(this.codexDir, "history.jsonl");
+    this.sessionsDir = path__namespace.join(this.codexDir, "sessions");
+  }
+  /**
+   * Start monitoring Codex sessions
+   */
+  async startWatching() {
+    console.log("[CodexMonitor] Starting Codex session monitoring...");
+    if (!fs__namespace.existsSync(this.codexDir)) {
+      console.log("[CodexMonitor] Codex directory not found, monitoring disabled");
+      return;
+    }
+    await this.scanHistory();
+    await this.scanSessions();
+    this.watchInterval = setInterval(async () => {
+      await this.watchHistory();
+      await this.scanSessions();
+    }, 2e3);
+    console.log("[CodexMonitor] Codex monitoring started");
+  }
+  /**
+   * Stop monitoring
+   */
+  stopWatching() {
+    if (this.watchInterval) {
+      clearInterval(this.watchInterval);
+      this.watchInterval = null;
+    }
+    console.log("[CodexMonitor] Codex monitoring stopped");
+  }
+  /**
+   * Watch history.jsonl for new entries
+   */
+  async watchHistory() {
+    if (!fs__namespace.existsSync(this.historyFile)) {
+      return;
+    }
+    const stats = fs__namespace.statSync(this.historyFile);
+    const currentSize = stats.size;
+    if (currentSize > this.historyFileSize) {
+      const stream = fs__namespace.createReadStream(this.historyFile, {
+        start: this.historyFileSize,
+        encoding: "utf8"
+      });
+      let buffer = "";
+      stream.on("data", (chunk) => {
+        buffer += chunk;
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (line.trim()) {
+            try {
+              const entry = JSON.parse(line);
+              this.processHistoryEntry(entry);
+            } catch (error) {
+              console.error("[CodexMonitor] Failed to parse history entry:", error);
+            }
+          }
+        }
+      });
+      stream.on("end", () => {
+        this.historyFileSize = currentSize;
+      });
+    }
+  }
+  /**
+   * Initial scan of history file
+   */
+  async scanHistory() {
+    if (!fs__namespace.existsSync(this.historyFile)) {
+      return;
+    }
+    const content = fs__namespace.readFileSync(this.historyFile, "utf8");
+    const lines = content.split("\n");
+    for (const line of lines) {
+      if (line.trim()) {
+        try {
+          const entry = JSON.parse(line);
+          this.processHistoryEntry(entry);
+        } catch (error) {
+        }
+      }
+    }
+    const stats = fs__namespace.statSync(this.historyFile);
+    this.historyFileSize = stats.size;
+  }
+  /**
+   * Process a history entry
+   */
+  processHistoryEntry(entry) {
+    const sessionId = entry.session_id;
+    if (!this.sessions.has(sessionId)) {
+      const session = {
+        id: sessionId,
+        projectPath: "Unknown",
+        // Will be updated from session file
+        projectName: "Codex Session",
+        userPrompt: entry.text.substring(0, 200),
+        startTime: new Date(entry.ts * 1e3).toISOString(),
+        lastActivity: new Date(entry.ts * 1e3).toISOString(),
+        status: SessionStatus.Active,
+        source: "codex",
+        messageCount: 0
+      };
+      this.sessions.set(sessionId, session);
+      this.emit("session-updated", session);
+    } else {
+      const session = this.sessions.get(sessionId);
+      session.lastActivity = new Date(entry.ts * 1e3).toISOString();
+      session.userPrompt = entry.text.substring(0, 200);
+      this.emit("session-updated", session);
+    }
+  }
+  /**
+   * Scan sessions directory for session files
+   */
+  async scanSessions() {
+    if (!fs__namespace.existsSync(this.sessionsDir)) {
+      return;
+    }
+    const years = fs__namespace.readdirSync(this.sessionsDir);
+    for (const year of years) {
+      const yearPath = path__namespace.join(this.sessionsDir, year);
+      if (!fs__namespace.statSync(yearPath).isDirectory()) continue;
+      const months = fs__namespace.readdirSync(yearPath);
+      for (const month of months) {
+        const monthPath = path__namespace.join(yearPath, month);
+        if (!fs__namespace.statSync(monthPath).isDirectory()) continue;
+        const days = fs__namespace.readdirSync(monthPath);
+        for (const day of days) {
+          const dayPath = path__namespace.join(monthPath, day);
+          if (!fs__namespace.statSync(dayPath).isDirectory()) continue;
+          const sessionFiles = fs__namespace.readdirSync(dayPath).filter((f) => f.endsWith(".jsonl"));
+          for (const file of sessionFiles) {
+            const filePath = path__namespace.join(dayPath, file);
+            if (!this.sessionFilesWatched.has(filePath)) {
+              await this.processSessionFile(filePath);
+              this.sessionFilesWatched.add(filePath);
+            }
+          }
+        }
+      }
+    }
+  }
+  /**
+   * Process a session file to extract metadata
+   */
+  async processSessionFile(filePath) {
+    var _a, _b;
+    try {
+      const content = fs__namespace.readFileSync(filePath, "utf8");
+      const lines = content.split("\n").filter((l) => l.trim());
+      if (lines.length === 0) return;
+      const firstLine = JSON.parse(lines[0]);
+      if (firstLine.type === "session_meta") {
+        const meta = firstLine.payload;
+        const sessionId = meta.id;
+        if (this.sessions.has(sessionId)) {
+          const session = this.sessions.get(sessionId);
+          session.projectPath = meta.cwd;
+          session.projectName = path__namespace.basename(meta.cwd);
+          if (meta.git) {
+            session.gitBranch = meta.git.branch;
+            session.gitRepo = meta.git.repository_url;
+          }
+          this.emit("session-updated", session);
+        } else {
+          const session = {
+            id: sessionId,
+            projectPath: meta.cwd,
+            projectName: path__namespace.basename(meta.cwd),
+            userPrompt: "Session started",
+            startTime: meta.timestamp,
+            lastActivity: meta.timestamp,
+            status: SessionStatus.Active,
+            source: "codex",
+            messageCount: 0,
+            gitBranch: (_a = meta.git) == null ? void 0 : _a.branch,
+            gitRepo: (_b = meta.git) == null ? void 0 : _b.repository_url
+          };
+          this.sessions.set(sessionId, session);
+          this.emit("session-updated", session);
+        }
+      }
+      if (lines.length > 1) {
+        const lastLine = JSON.parse(lines[lines.length - 1]);
+        const sessionId = firstLine.payload.id;
+        if (this.sessions.has(sessionId)) {
+          const session = this.sessions.get(sessionId);
+          session.lastActivity = lastLine.timestamp;
+          const lastActivityTime = new Date(lastLine.timestamp).getTime();
+          const now = Date.now();
+          const fiveMinutes = 5 * 60 * 1e3;
+          session.status = now - lastActivityTime < fiveMinutes ? SessionStatus.Active : SessionStatus.Stopped;
+          this.emit("session-updated", session);
+        }
+      }
+    } catch (error) {
+      console.error("[CodexMonitor] Failed to process session file:", filePath, error);
+    }
+  }
+  /**
+   * Get all sessions
+   */
+  getSessions() {
+    return Array.from(this.sessions.values());
+  }
+  /**
+   * Get session by ID
+   */
+  getSessionById(sessionId) {
+    return this.sessions.get(sessionId);
+  }
+}
 class SessionMonitor extends events.EventEmitter {
   constructor() {
     super();
@@ -270,9 +495,11 @@ class SessionMonitor extends events.EventEmitter {
     __publicField(this, "sessionsDir");
     __publicField(this, "processMonitor", null);
     __publicField(this, "historyMonitor", null);
+    __publicField(this, "codexMonitor", null);
     this.sessionsDir = path__namespace.join(os__namespace.homedir(), ".claude", "active_sessions");
     this.processMonitor = new ClaudeProcessMonitor();
     this.historyMonitor = new ClaudeHistoryMonitor();
+    this.codexMonitor = new CodexMonitor();
   }
   async startWatching() {
     console.log("Starting comprehensive session monitoring...");
@@ -290,6 +517,12 @@ class SessionMonitor extends events.EventEmitter {
       await this.historyMonitor.startMonitoring();
       this.historyMonitor.on("sessions-updated", (historySessions) => {
         this.mergeHistorySessions(historySessions);
+      });
+    }
+    if (this.codexMonitor) {
+      await this.codexMonitor.startWatching();
+      this.codexMonitor.on("session-updated", (codexSession) => {
+        this.mergeCodexSession(codexSession);
       });
     }
     await this.scanDirectory();
@@ -498,6 +731,21 @@ class SessionMonitor extends events.EventEmitter {
       }
     }
     this.emit("sessions-updated", this.getSessions());
+  }
+  mergeCodexSession(codexSession) {
+    const existingSession = this.sessions.get(codexSession.id);
+    if (!existingSession || existingSession.source === "codex") {
+      this.sessions.set(codexSession.id, codexSession);
+      console.log(`Codex session ${codexSession.projectName}: status=${codexSession.status}, lastActivity=${codexSession.lastActivity}`);
+      this.emit("sessions-updated", this.getSessions());
+    } else {
+      if (new Date(codexSession.lastActivity) > new Date(existingSession.lastActivity)) {
+        existingSession.lastActivity = codexSession.lastActivity;
+        existingSession.status = codexSession.status;
+        existingSession.userPrompt = codexSession.userPrompt;
+        this.emit("sessions-updated", this.getSessions());
+      }
+    }
   }
   getSessions() {
     const thirtyMinutesAgo = Date.now() - 30 * 60 * 1e3;

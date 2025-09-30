@@ -35,5 +35,7 @@ export interface Session {
     description: string;
   }>;
   finalResponse?: string;
-  source?: 'hook' | 'process' | 'history';
+  source?: 'hook' | 'process' | 'history' | 'codex';
+  gitBranch?: string;
+  gitRepo?: string;
 }

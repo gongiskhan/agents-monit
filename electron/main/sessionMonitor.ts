@@ -5,6 +5,7 @@ import * as chokidar from 'chokidar';
 import { EventEmitter } from 'events';
 import { Session, SessionStatus, MessageType } from './types';
 import { ClaudeProcessMonitor, ClaudeHistoryMonitor } from './claudeProcessMonitor';
+import { CodexMonitor } from './codexMonitor';
 
 interface HookSession {
   id: string;
@@ -34,12 +35,14 @@ export class SessionMonitor extends EventEmitter {
   private sessionsDir: string;
   private processMonitor: ClaudeProcessMonitor | null = null;
   private historyMonitor: ClaudeHistoryMonitor | null = null;
+  private codexMonitor: CodexMonitor | null = null;
 
   constructor() {
     super();
     this.sessionsDir = path.join(os.homedir(), '.claude', 'active_sessions');
     this.processMonitor = new ClaudeProcessMonitor();
     this.historyMonitor = new ClaudeHistoryMonitor();
+    this.codexMonitor = new CodexMonitor();
   }
 
   async startWatching(): Promise<void> {
@@ -64,6 +67,14 @@ export class SessionMonitor extends EventEmitter {
       await this.historyMonitor.startMonitoring();
       this.historyMonitor.on('sessions-updated', (historySessions) => {
         this.mergeHistorySessions(historySessions);
+      });
+    }
+
+    // Start Codex monitoring
+    if (this.codexMonitor) {
+      await this.codexMonitor.startWatching();
+      this.codexMonitor.on('session-updated', (codexSession: Session) => {
+        this.mergeCodexSession(codexSession);
       });
     }
 
@@ -337,6 +348,26 @@ export class SessionMonitor extends EventEmitter {
       }
     }
     this.emit('sessions-updated', this.getSessions());
+  }
+
+  private mergeCodexSession(codexSession: Session): void {
+    // Merge or update Codex session in the main sessions map
+    const existingSession = this.sessions.get(codexSession.id);
+
+    if (!existingSession || existingSession.source === 'codex') {
+      // No existing session or it's also from Codex - update it
+      this.sessions.set(codexSession.id, codexSession);
+      console.log(`Codex session ${codexSession.projectName}: status=${codexSession.status}, lastActivity=${codexSession.lastActivity}`);
+      this.emit('sessions-updated', this.getSessions());
+    } else {
+      // Existing session from another source - merge data
+      if (new Date(codexSession.lastActivity) > new Date(existingSession.lastActivity)) {
+        existingSession.lastActivity = codexSession.lastActivity;
+        existingSession.status = codexSession.status;
+        existingSession.userPrompt = codexSession.userPrompt;
+        this.emit('sessions-updated', this.getSessions());
+      }
+    }
   }
 
   getSessions(): Session[] {

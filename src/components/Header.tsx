@@ -36,7 +36,17 @@ export const Header: React.FC = () => {
     <header className="app-header draggable">
       <div className="header-content">
         <div className="header-title">
-          <h1>Claude Code Monitor</h1>
+          <img
+            src="/icon.png"
+            alt="Agents Bro"
+            style={{
+              width: '2rem',
+              height: '2rem',
+              marginRight: '0.5rem',
+              borderRadius: '8px'
+            }}
+          />
+          <h1>Agents Bro</h1>
           <div className="status-badges non-draggable">
             <span className="badge badge-active" title={`${activeSessions} active sessions`}>
               {activeSessions}

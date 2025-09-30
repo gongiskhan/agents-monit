@@ -1,5 +1,5 @@
 {
-  "name": "agents-monit",
+  "name": "agents-bro",
   "private": true,
   "version": "0.1.0",
   "main": "dist-electron/index.js",
@@ -31,17 +31,19 @@
     "wait-on": "^7.2.0"
   },
   "build": {
-    "appId": "com.agents.monit",
-    "productName": "Claude Code Monitor",
+    "appId": "com.agents.bro",
+    "productName": "Agents Bro",
     "directories": {
       "output": "dist"
     },
     "files": [
       "dist-electron",
-      "dist"
+      "dist",
+      "public/icon.png"
     ],
     "mac": {
-      "category": "public.app-category.developer-tools"
+      "category": "public.app-category.developer-tools",
+      "icon": "public/icon.png"
     }
   }
 }

@@ -41,8 +41,12 @@ export default defineConfig({
   ],
   clearScreen: false,
   server: {
+    host: '0.0.0.0', // Allow access from any network interface
     port: 5173,
     strictPort: true,
+    hmr: {
+      clientPort: 5173,
+    },
   },
   build: {
     target: ['es2021', 'chrome100', 'safari13'],

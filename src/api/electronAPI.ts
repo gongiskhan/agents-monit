@@ -22,6 +22,15 @@ export const invoke = async <T = any>(command: string, args?: any): Promise<T> =
     case 'get-session-details':
       return window.electronAPI.invoke('get-session-details', args?.sessionId) as Promise<T>;
 
+    case 'open-project':
+      return window.electronAPI.invoke('open-project', args) as Promise<T>;
+
+    case 'create-worktree':
+      return window.electronAPI.invoke('create-worktree', args) as Promise<T>;
+
+    case 'get-log-file-path':
+      return window.electronAPI.invoke('get-log-file-path') as Promise<T>;
+
     default:
       throw new Error(`Unknown command: ${command}`);
   }

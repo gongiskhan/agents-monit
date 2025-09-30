@@ -341,12 +341,46 @@ export class SessionMonitor extends EventEmitter {
 
   getSessions(): Session[] {
     const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
+    const homeDir = os.homedir();
 
     // Filter sessions with activity in last 30 minutes
     const recentSessions = Array.from(this.sessions.values())
       .filter(session => {
         const lastActivityTime = new Date(session.lastActivity).getTime();
-        return lastActivityTime > thirtyMinutesAgo;
+        if (lastActivityTime <= thirtyMinutesAgo) return false;
+
+        // Filter out invalid/unwanted sessions
+        const projectName = session.projectName.toLowerCase();
+        const projectPath = session.projectPath;
+
+        // Exclude sessions with bad project names
+        if (projectName === 'unknown' || projectName === 'unknown project') {
+          console.log(`Filtering out session with unknown project name: ${session.id}`);
+          return false;
+        }
+
+        // Exclude home directory itself
+        if (projectPath === homeDir) {
+          console.log(`Filtering out home directory session: ${projectPath}`);
+          return false;
+        }
+
+        // Exclude config directories
+        const excludedPaths = ['.claude', 'Library', 'Desktop', 'Documents', 'Downloads'];
+        const baseName = path.basename(projectPath);
+        if (excludedPaths.includes(baseName)) {
+          console.log(`Filtering out excluded directory: ${baseName}`);
+          return false;
+        }
+
+        // Exclude direct subdirectories of home that are just user folders
+        const parentDir = path.dirname(projectPath);
+        if (parentDir === homeDir && !projectPath.includes('/dev/') && !projectPath.includes('/projects/')) {
+          console.log(`Filtering out home subdirectory: ${projectPath}`);
+          return false;
+        }
+
+        return true;
       });
 
     // Deduplicate by projectPath, keeping most recent

@@ -122,6 +122,21 @@ export class ClaudeProcessMonitor extends EventEmitter {
   }
 
   private isProjectDirectory(dirPath: string): boolean {
+    // Exclude home directory and subdirectories that aren't actual projects
+    const homeDir = os.homedir();
+    const dirName = path.basename(dirPath);
+
+    // Don't treat home dir itself or config dirs as projects
+    if (dirPath === homeDir || dirPath === path.join(homeDir, '.claude')) {
+      return false;
+    }
+
+    // Exclude user home directory subfolders that are clearly not projects
+    const excludedNames = ['Desktop', 'Documents', 'Downloads', 'Pictures', '.claude', 'Library'];
+    if (excludedNames.includes(dirName)) {
+      return false;
+    }
+
     // Check if directory has typical project indicators
     const indicators = [
       '.git',
@@ -132,8 +147,7 @@ export class ClaudeProcessMonitor extends EventEmitter {
       'Gemfile',
       'go.mod',
       'pom.xml',
-      'build.gradle',
-      '.claude'
+      'build.gradle'
     ];
 
     for (const indicator of indicators) {

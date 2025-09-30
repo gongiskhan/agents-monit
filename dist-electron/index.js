@@ -569,6 +569,31 @@ function log(message) {
 }
 log(`=== Agents Bro started ===`);
 log(`Log file: ${logFile}`);
+function checkHooksInstalled() {
+  const homeDir = require("os").homedir();
+  const hooksDir = path__namespace.join(homeDir, ".claude", "hooks");
+  const requiredHooks = [
+    "user_prompt_submit.py",
+    "pre_tool_use.py",
+    "post_tool_use.py",
+    "session_start.py"
+  ];
+  const missingHooks = [];
+  for (const hook of requiredHooks) {
+    const hookPath = path__namespace.join(hooksDir, hook);
+    if (!fs__namespace.existsSync(hookPath)) {
+      missingHooks.push(hook);
+    }
+  }
+  const utilPath = path__namespace.join(hooksDir, "utils", "session_tracker.py");
+  if (!fs__namespace.existsSync(utilPath)) {
+    missingHooks.push("utils/session_tracker.py");
+  }
+  return {
+    installed: missingHooks.length === 0,
+    missingHooks
+  };
+}
 async function createWindow() {
   mainWindow = new electron.BrowserWindow({
     width: 1200,
@@ -629,6 +654,51 @@ electron.app.whenReady().then(async () => {
   });
   electron.ipcMain.handle("get-log-file-path", () => {
     return logFile;
+  });
+  electron.ipcMain.handle("check-hooks-installed", () => {
+    const result = checkHooksInstalled();
+    log(`Hooks check: installed=${result.installed}, missing=${result.missingHooks.join(", ")}`);
+    return result;
+  });
+  electron.ipcMain.handle("run-setup-hooks", async () => {
+    const { spawn } = await import("child_process");
+    const setupScript = path__namespace.join(__dirname, "../../setup-hooks.sh");
+    log(`Running setup script: ${setupScript}`);
+    return new Promise((resolve) => {
+      var _a, _b;
+      const setupProcess = spawn(setupScript, [], {
+        shell: true,
+        stdio: "pipe"
+      });
+      let output = "";
+      let errorOutput = "";
+      (_a = setupProcess.stdout) == null ? void 0 : _a.on("data", (data) => {
+        const text = data.toString();
+        output += text;
+        log(`Setup stdout: ${text}`);
+      });
+      (_b = setupProcess.stderr) == null ? void 0 : _b.on("data", (data) => {
+        const text = data.toString();
+        errorOutput += text;
+        log(`Setup stderr: ${text}`);
+      });
+      setupProcess.on("close", (code) => {
+        log(`Setup script exited with code: ${code}`);
+        resolve({
+          success: code === 0,
+          output,
+          error: errorOutput
+        });
+      });
+      setupProcess.on("error", (error) => {
+        log(`Setup script error: ${error.message}`);
+        resolve({
+          success: false,
+          output,
+          error: error.message
+        });
+      });
+    });
   });
   electron.ipcMain.handle("open-project", async (_, { command, projectPath }) => {
     var _a;

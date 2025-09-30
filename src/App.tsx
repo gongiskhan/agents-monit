@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { SessionList } from './components/SessionList';
 import { StatusBar } from './components/StatusBar';
 import { NotificationSettings } from './components/NotificationSettings';
+import { SetupBanner } from './components/SetupBanner';
 import './App.css';
 
 function App() {
@@ -11,6 +12,7 @@ function App() {
   return (
     <div className="app">
       <Header />
+      <SetupBanner />
       <main className="app-main">
         <div className="main-content">
           <SessionList />

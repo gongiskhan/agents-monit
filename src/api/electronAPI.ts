@@ -1,6 +1,17 @@
 // Electron API wrapper to replace Tauri's invoke
 // This provides a consistent API interface for the React components
 
+export interface HooksCheckResult {
+  installed: boolean;
+  missingHooks: string[];
+}
+
+export interface SetupResult {
+  success: boolean;
+  output: string;
+  error?: string;
+}
+
 export const invoke = async <T = any>(command: string, args?: any): Promise<T> => {
   if (!window.electronAPI) {
     throw new Error('Electron API not available');
@@ -30,6 +41,12 @@ export const invoke = async <T = any>(command: string, args?: any): Promise<T> =
 
     case 'get-log-file-path':
       return window.electronAPI.invoke('get-log-file-path') as Promise<T>;
+
+    case 'check-hooks-installed':
+      return window.electronAPI.invoke('check-hooks-installed') as Promise<T>;
+
+    case 'run-setup-hooks':
+      return window.electronAPI.invoke('run-setup-hooks') as Promise<T>;
 
     default:
       throw new Error(`Unknown command: ${command}`);

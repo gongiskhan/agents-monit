@@ -22,6 +22,36 @@ function log(message: string) {
 log(`=== Agents Bro started ===`);
 log(`Log file: ${logFile}`);
 
+// Check if hooks are installed
+function checkHooksInstalled(): { installed: boolean; missingHooks: string[] } {
+  const homeDir = require('os').homedir();
+  const hooksDir = path.join(homeDir, '.claude', 'hooks');
+  const requiredHooks = [
+    'user_prompt_submit.py',
+    'pre_tool_use.py',
+    'post_tool_use.py',
+    'session_start.py'
+  ];
+
+  const missingHooks: string[] = [];
+  for (const hook of requiredHooks) {
+    const hookPath = path.join(hooksDir, hook);
+    if (!fs.existsSync(hookPath)) {
+      missingHooks.push(hook);
+    }
+  }
+
+  const utilPath = path.join(hooksDir, 'utils', 'session_tracker.py');
+  if (!fs.existsSync(utilPath)) {
+    missingHooks.push('utils/session_tracker.py');
+  }
+
+  return {
+    installed: missingHooks.length === 0,
+    missingHooks
+  };
+}
+
 async function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
@@ -97,6 +127,59 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('get-log-file-path', () => {
     return logFile;
+  });
+
+  ipcMain.handle('check-hooks-installed', () => {
+    const result = checkHooksInstalled();
+    log(`Hooks check: installed=${result.installed}, missing=${result.missingHooks.join(', ')}`);
+    return result;
+  });
+
+  ipcMain.handle('run-setup-hooks', async () => {
+    const { spawn } = await import('child_process');
+    const setupScript = path.join(__dirname, '../../setup-hooks.sh');
+
+    log(`Running setup script: ${setupScript}`);
+
+    return new Promise((resolve) => {
+      const setupProcess = spawn(setupScript, [], {
+        shell: true,
+        stdio: 'pipe'
+      });
+
+      let output = '';
+      let errorOutput = '';
+
+      setupProcess.stdout?.on('data', (data) => {
+        const text = data.toString();
+        output += text;
+        log(`Setup stdout: ${text}`);
+      });
+
+      setupProcess.stderr?.on('data', (data) => {
+        const text = data.toString();
+        errorOutput += text;
+        log(`Setup stderr: ${text}`);
+      });
+
+      setupProcess.on('close', (code) => {
+        log(`Setup script exited with code: ${code}`);
+        resolve({
+          success: code === 0,
+          output,
+          error: errorOutput
+        });
+      });
+
+      setupProcess.on('error', (error) => {
+        log(`Setup script error: ${error.message}`);
+        resolve({
+          success: false,
+          output,
+          error: error.message
+        });
+      });
+    });
   });
 
   ipcMain.handle('open-project', async (_, { command, projectPath }: { command: string; projectPath: string }) => {

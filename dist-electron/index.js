@@ -1,6 +1,27 @@
 "use strict";
+var __create = Object.create;
 var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
 var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 const electron = require("electron");
 const path = require("path");
@@ -120,6 +141,15 @@ class ClaudeProcessMonitor extends events.EventEmitter {
     }
   }
   isProjectDirectory(dirPath) {
+    const homeDir = os__namespace.homedir();
+    const dirName = path__namespace.basename(dirPath);
+    if (dirPath === homeDir || dirPath === path__namespace.join(homeDir, ".claude")) {
+      return false;
+    }
+    const excludedNames = ["Desktop", "Documents", "Downloads", "Pictures", ".claude", "Library"];
+    if (excludedNames.includes(dirName)) {
+      return false;
+    }
     const indicators = [
       ".git",
       "package.json",
@@ -129,8 +159,7 @@ class ClaudeProcessMonitor extends events.EventEmitter {
       "Gemfile",
       "go.mod",
       "pom.xml",
-      "build.gradle",
-      ".claude"
+      "build.gradle"
     ];
     for (const indicator of indicators) {
       if (fs__namespace.existsSync(path__namespace.join(dirPath, indicator))) {
@@ -472,9 +501,32 @@ class SessionMonitor extends events.EventEmitter {
   }
   getSessions() {
     const thirtyMinutesAgo = Date.now() - 30 * 60 * 1e3;
+    const homeDir = os__namespace.homedir();
     const recentSessions = Array.from(this.sessions.values()).filter((session) => {
       const lastActivityTime = new Date(session.lastActivity).getTime();
-      return lastActivityTime > thirtyMinutesAgo;
+      if (lastActivityTime <= thirtyMinutesAgo) return false;
+      const projectName = session.projectName.toLowerCase();
+      const projectPath = session.projectPath;
+      if (projectName === "unknown" || projectName === "unknown project") {
+        console.log(`Filtering out session with unknown project name: ${session.id}`);
+        return false;
+      }
+      if (projectPath === homeDir) {
+        console.log(`Filtering out home directory session: ${projectPath}`);
+        return false;
+      }
+      const excludedPaths = [".claude", "Library", "Desktop", "Documents", "Downloads"];
+      const baseName = path__namespace.basename(projectPath);
+      if (excludedPaths.includes(baseName)) {
+        console.log(`Filtering out excluded directory: ${baseName}`);
+        return false;
+      }
+      const parentDir = path__namespace.dirname(projectPath);
+      if (parentDir === homeDir && !projectPath.includes("/dev/") && !projectPath.includes("/projects/")) {
+        console.log(`Filtering out home subdirectory: ${projectPath}`);
+        return false;
+      }
+      return true;
     });
     const sessionsByProject = /* @__PURE__ */ new Map();
     for (const session of recentSessions) {
@@ -506,6 +558,17 @@ class SessionMonitor extends events.EventEmitter {
 let mainWindow = null;
 let sessionMonitor = null;
 const isDev = process.env.NODE_ENV === "development" || !electron.app.isPackaged;
+const logFile = path__namespace.join(electron.app.getPath("userData"), "agents-bro.log");
+const logStream = fs__namespace.createWriteStream(logFile, { flags: "a" });
+function log(message) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const logMessage = `[${timestamp}] ${message}
+`;
+  logStream.write(logMessage);
+  console.log(message);
+}
+log(`=== Agents Bro started ===`);
+log(`Log file: ${logFile}`);
 async function createWindow() {
   mainWindow = new electron.BrowserWindow({
     width: 1200,
@@ -523,7 +586,12 @@ async function createWindow() {
     mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools();
     mainWindow.webContents.on("will-navigate", (event, url) => {
-      if (!url.startsWith("http://localhost:5173")) {
+      try {
+        const urlObj = new URL(url);
+        if (urlObj.port !== "5173" && urlObj.port !== "") {
+          event.preventDefault();
+        }
+      } catch {
         event.preventDefault();
       }
     });
@@ -538,22 +606,166 @@ electron.app.whenReady().then(async () => {
   sessionMonitor = new SessionMonitor();
   electron.ipcMain.handle("get-sessions", () => {
     const sessions = (sessionMonitor == null ? void 0 : sessionMonitor.getSessions()) || [];
-    console.log("get-sessions called, returning", sessions.length, "sessions");
+    log(`get-sessions called, returning ${sessions.length} sessions`);
     return sessions;
   });
   electron.ipcMain.handle("get-active-sessions", () => {
-    return (sessionMonitor == null ? void 0 : sessionMonitor.getActiveSessions()) || [];
+    const activeSessions = (sessionMonitor == null ? void 0 : sessionMonitor.getActiveSessions()) || [];
+    log(`get-active-sessions called, returning ${activeSessions.length} sessions`);
+    return activeSessions;
   });
   electron.ipcMain.handle("refresh-sessions", async () => {
+    log("refresh-sessions called");
     await (sessionMonitor == null ? void 0 : sessionMonitor.scanDirectory());
     return (sessionMonitor == null ? void 0 : sessionMonitor.getSessions()) || [];
   });
   electron.ipcMain.handle("focus-window", async (_, sessionId) => {
-    console.log(`Focus requested for session: ${sessionId}`);
+    log(`Focus requested for session: ${sessionId}`);
     return true;
   });
   electron.ipcMain.handle("get-session-details", async (_, sessionId) => {
+    log(`get-session-details called for: ${sessionId}`);
     return sessionMonitor == null ? void 0 : sessionMonitor.getSessionById(sessionId);
+  });
+  electron.ipcMain.handle("get-log-file-path", () => {
+    return logFile;
+  });
+  electron.ipcMain.handle("open-project", async (_, { command, projectPath }) => {
+    var _a;
+    const { spawn } = await import("child_process");
+    try {
+      log(`open-project called: command="${command}" projectPath="${projectPath}"`);
+      if (!fs__namespace.existsSync(projectPath)) {
+        log(`ERROR: Project path does not exist: ${projectPath}`);
+        return false;
+      }
+      log(`Spawning: ${command} ${projectPath}`);
+      const child = spawn(command, [projectPath], {
+        detached: true,
+        stdio: "pipe"
+      });
+      (_a = child.stderr) == null ? void 0 : _a.on("data", (data) => {
+        log(`open-project stderr: ${data.toString()}`);
+      });
+      child.on("error", (error) => {
+        log(`open-project spawn error: ${error.message}`);
+      });
+      child.on("spawn", () => {
+        log(`open-project spawned successfully`);
+      });
+      child.unref();
+      return true;
+    } catch (error) {
+      log(`open-project exception: ${error}`);
+      return false;
+    }
+  });
+  electron.ipcMain.handle("create-worktree", async (_, { projectPath, projectName, projectsHomeFolder, command }) => {
+    const { spawn } = await import("child_process");
+    const pathModule = await import("path");
+    try {
+      log(`create-worktree called: projectPath="${projectPath}" projectName="${projectName}" projectsHomeFolder="${projectsHomeFolder}" command="${command}"`);
+      if (!fs__namespace.existsSync(projectPath)) {
+        log(`ERROR: Project path does not exist: ${projectPath}`);
+        return { success: false, error: `Project path does not exist: ${projectPath}` };
+      }
+      const worktreesDir = pathModule.join(projectsHomeFolder, "worktrees");
+      log(`Worktrees directory: ${worktreesDir}`);
+      if (!fs__namespace.existsSync(worktreesDir)) {
+        log(`Creating worktrees directory: ${worktreesDir}`);
+        fs__namespace.mkdirSync(worktreesDir, { recursive: true });
+      }
+      let nextVersion = 1;
+      if (fs__namespace.existsSync(worktreesDir)) {
+        const entries = fs__namespace.readdirSync(worktreesDir);
+        log(`Found ${entries.length} entries in worktrees directory`);
+        const projectWorktrees = entries.filter((name) => name.startsWith(`${projectName}-v`));
+        log(`Found ${projectWorktrees.length} worktrees for project "${projectName}"`);
+        if (projectWorktrees.length > 0) {
+          const versions = projectWorktrees.map((name) => {
+            const match = name.match(/-v(\d+)$/);
+            return match ? parseInt(match[1], 10) : 0;
+          }).filter((v) => !isNaN(v));
+          if (versions.length > 0) {
+            nextVersion = Math.max(...versions) + 1;
+            log(`Next version will be: v${nextVersion}`);
+          }
+        }
+      }
+      const worktreeName = `${projectName}-v${nextVersion}`;
+      const worktreePath = pathModule.join(worktreesDir, worktreeName);
+      log(`Creating worktree: ${worktreePath}`);
+      return new Promise((resolve) => {
+        var _a, _b;
+        log(`Spawning git: git worktree add ${worktreePath} (cwd: ${projectPath})`);
+        const gitProcess = spawn("git", ["worktree", "add", worktreePath], {
+          cwd: projectPath,
+          stdio: "pipe"
+        });
+        let errorOutput = "";
+        let stdoutOutput = "";
+        (_a = gitProcess.stdout) == null ? void 0 : _a.on("data", (data) => {
+          const output = data.toString();
+          stdoutOutput += output;
+          log(`git stdout: ${output}`);
+        });
+        (_b = gitProcess.stderr) == null ? void 0 : _b.on("data", (data) => {
+          const output = data.toString();
+          errorOutput += output;
+          log(`git stderr: ${output}`);
+        });
+        gitProcess.on("error", (error) => {
+          log(`git spawn error: ${error.message}`);
+          resolve({ success: false, error: error.message });
+        });
+        gitProcess.on("close", (code) => {
+          log(`git process exited with code: ${code}`);
+          if (code === 0) {
+            log(`Worktree created successfully: ${worktreePath}`);
+            try {
+              const files = fs__namespace.readdirSync(projectPath);
+              const envFiles = files.filter((file) => file.startsWith(".env"));
+              if (envFiles.length > 0) {
+                log(`Found ${envFiles.length} .env files to copy: ${envFiles.join(", ")}`);
+                for (const envFile of envFiles) {
+                  const sourcePath = pathModule.join(projectPath, envFile);
+                  const destPath = pathModule.join(worktreePath, envFile);
+                  try {
+                    fs__namespace.copyFileSync(sourcePath, destPath);
+                    log(`Copied ${envFile} to worktree`);
+                  } catch (copyError) {
+                    log(`Warning: Failed to copy ${envFile}: ${copyError}`);
+                  }
+                }
+              } else {
+                log("No .env files found to copy");
+              }
+            } catch (scanError) {
+              log(`Warning: Failed to scan for .env files: ${scanError}`);
+            }
+            log(`Opening worktree: ${command} ${worktreePath}`);
+            const openProcess = spawn(command, [worktreePath], {
+              detached: true,
+              stdio: "pipe"
+            });
+            openProcess.on("error", (error) => {
+              log(`open worktree spawn error: ${error.message}`);
+            });
+            openProcess.on("spawn", () => {
+              log(`Worktree opened successfully`);
+            });
+            openProcess.unref();
+            resolve({ success: true, worktreePath });
+          } else {
+            log(`Failed to create worktree. Error: ${errorOutput}`);
+            resolve({ success: false, error: errorOutput || `Git exited with code ${code}` });
+          }
+        });
+      });
+    } catch (error) {
+      log(`create-worktree exception: ${error}`);
+      return { success: false, error: String(error) };
+    }
   });
   sessionMonitor.on("sessions-updated", (sessions) => {
     if (mainWindow && !mainWindow.isDestroyed()) {

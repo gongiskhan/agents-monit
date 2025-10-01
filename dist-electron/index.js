@@ -62,7 +62,7 @@ var MessageType = /* @__PURE__ */ ((MessageType2) => {
   MessageType2["System"] = "system";
   return MessageType2;
 })(MessageType || {});
-const execAsync = util.promisify(child_process.exec);
+const execAsync$1 = util.promisify(child_process.exec);
 class ClaudeProcessMonitor extends events.EventEmitter {
   constructor() {
     super(...arguments);
@@ -78,7 +78,7 @@ class ClaudeProcessMonitor extends events.EventEmitter {
   }
   async scanProcesses() {
     try {
-      const { stdout: psOutput } = await execAsync(
+      const { stdout: psOutput } = await execAsync$1(
         `ps aux | grep -E "[c]laude|[C]laude" | grep -v grep`
       );
       const lines = psOutput.trim().split("\n").filter((line) => line.length > 0);
@@ -89,7 +89,7 @@ class ClaudeProcessMonitor extends events.EventEmitter {
         const pid = parts[1];
         currentPids.add(pid);
         try {
-          const { stdout: cwdOutput } = await execAsync(`lsof -p ${pid} 2>/dev/null | grep cwd | awk '{print $NF}'`);
+          const { stdout: cwdOutput } = await execAsync$1(`lsof -p ${pid} 2>/dev/null | grep cwd | awk '{print $NF}'`);
           const cwd = cwdOutput.trim();
           if (cwd && cwd !== "/" && !cwd.includes("private/var")) {
             if (this.isProjectDirectory(cwd)) {
@@ -262,216 +262,114 @@ class ClaudeHistoryMonitor extends events.EventEmitter {
     fs__namespace.unwatchFile(this.historyPath);
   }
 }
+const execAsync = util.promisify(child_process.exec);
 class CodexMonitor extends events.EventEmitter {
   constructor() {
     super();
-    __publicField(this, "codexDir");
-    __publicField(this, "historyFile");
-    __publicField(this, "sessionsDir");
-    __publicField(this, "historyFileSize", 0);
     __publicField(this, "sessions", /* @__PURE__ */ new Map());
-    __publicField(this, "watchInterval", null);
-    __publicField(this, "sessionFilesWatched", /* @__PURE__ */ new Set());
-    this.codexDir = path__namespace.join(os__namespace.homedir(), ".codex");
-    this.historyFile = path__namespace.join(this.codexDir, "history.jsonl");
-    this.sessionsDir = path__namespace.join(this.codexDir, "sessions");
+    __publicField(this, "processes", /* @__PURE__ */ new Map());
+    __publicField(this, "scanInterval", null);
   }
   /**
-   * Start monitoring Codex sessions
+   * Start monitoring Codex processes
    */
   async startWatching() {
-    console.log("[CodexMonitor] Starting Codex session monitoring...");
-    if (!fs__namespace.existsSync(this.codexDir)) {
-      console.log("[CodexMonitor] Codex directory not found, monitoring disabled");
-      return;
-    }
-    await this.scanHistory();
-    await this.scanSessions();
-    this.watchInterval = setInterval(async () => {
-      await this.watchHistory();
-      await this.scanSessions();
-    }, 2e3);
+    console.log("[CodexMonitor] Starting Codex process monitoring...");
+    await this.scanProcesses();
+    this.scanInterval = setInterval(async () => {
+      await this.scanProcesses();
+    }, 3e3);
     console.log("[CodexMonitor] Codex monitoring started");
   }
   /**
    * Stop monitoring
    */
   stopWatching() {
-    if (this.watchInterval) {
-      clearInterval(this.watchInterval);
-      this.watchInterval = null;
+    if (this.scanInterval) {
+      clearInterval(this.scanInterval);
+      this.scanInterval = null;
     }
     console.log("[CodexMonitor] Codex monitoring stopped");
   }
   /**
-   * Watch history.jsonl for new entries
+   * Scan for running Codex processes
    */
-  async watchHistory() {
-    if (!fs__namespace.existsSync(this.historyFile)) {
-      return;
-    }
-    const stats = fs__namespace.statSync(this.historyFile);
-    const currentSize = stats.size;
-    if (currentSize > this.historyFileSize) {
-      const stream = fs__namespace.createReadStream(this.historyFile, {
-        start: this.historyFileSize,
-        encoding: "utf8"
-      });
-      let buffer = "";
-      stream.on("data", (chunk) => {
-        buffer += chunk;
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const entry = JSON.parse(line);
-              this.processHistoryEntry(entry);
-            } catch (error) {
-              console.error("[CodexMonitor] Failed to parse history entry:", error);
-            }
-          }
-        }
-      });
-      stream.on("end", () => {
-        this.historyFileSize = currentSize;
-      });
-    }
-  }
-  /**
-   * Initial scan of history file
-   */
-  async scanHistory() {
-    if (!fs__namespace.existsSync(this.historyFile)) {
-      return;
-    }
-    const content = fs__namespace.readFileSync(this.historyFile, "utf8");
-    const lines = content.split("\n");
-    for (const line of lines) {
-      if (line.trim()) {
-        try {
-          const entry = JSON.parse(line);
-          this.processHistoryEntry(entry);
-        } catch (error) {
-        }
-      }
-    }
-    const stats = fs__namespace.statSync(this.historyFile);
-    this.historyFileSize = stats.size;
-  }
-  /**
-   * Process a history entry
-   */
-  processHistoryEntry(entry) {
-    const sessionId = entry.session_id;
-    if (!this.sessions.has(sessionId)) {
-      const session = {
-        id: sessionId,
-        projectPath: "Unknown",
-        // Will be updated from session file
-        projectName: "Codex Session",
-        userPrompt: entry.text.substring(0, 200),
-        startTime: new Date(entry.ts * 1e3).toISOString(),
-        lastActivity: new Date(entry.ts * 1e3).toISOString(),
-        status: SessionStatus.Active,
-        source: "codex",
-        messageCount: 0
-      };
-      this.sessions.set(sessionId, session);
-      this.emit("session-updated", session);
-    } else {
-      const session = this.sessions.get(sessionId);
-      session.lastActivity = new Date(entry.ts * 1e3).toISOString();
-      session.userPrompt = entry.text.substring(0, 200);
-      this.emit("session-updated", session);
-    }
-  }
-  /**
-   * Scan sessions directory for session files
-   */
-  async scanSessions() {
-    if (!fs__namespace.existsSync(this.sessionsDir)) {
-      return;
-    }
-    const years = fs__namespace.readdirSync(this.sessionsDir);
-    for (const year of years) {
-      const yearPath = path__namespace.join(this.sessionsDir, year);
-      if (!fs__namespace.statSync(yearPath).isDirectory()) continue;
-      const months = fs__namespace.readdirSync(yearPath);
-      for (const month of months) {
-        const monthPath = path__namespace.join(yearPath, month);
-        if (!fs__namespace.statSync(monthPath).isDirectory()) continue;
-        const days = fs__namespace.readdirSync(monthPath);
-        for (const day of days) {
-          const dayPath = path__namespace.join(monthPath, day);
-          if (!fs__namespace.statSync(dayPath).isDirectory()) continue;
-          const sessionFiles = fs__namespace.readdirSync(dayPath).filter((f) => f.endsWith(".jsonl"));
-          for (const file of sessionFiles) {
-            const filePath = path__namespace.join(dayPath, file);
-            if (!this.sessionFilesWatched.has(filePath)) {
-              await this.processSessionFile(filePath);
-              this.sessionFilesWatched.add(filePath);
-            }
-          }
-        }
-      }
-    }
-  }
-  /**
-   * Process a session file to extract metadata
-   */
-  async processSessionFile(filePath) {
-    var _a, _b;
+  async scanProcesses() {
     try {
-      const content = fs__namespace.readFileSync(filePath, "utf8");
-      const lines = content.split("\n").filter((l) => l.trim());
-      if (lines.length === 0) return;
-      const firstLine = JSON.parse(lines[0]);
-      if (firstLine.type === "session_meta") {
-        const meta = firstLine.payload;
-        const sessionId = meta.id;
-        if (this.sessions.has(sessionId)) {
-          const session = this.sessions.get(sessionId);
-          session.projectPath = meta.cwd;
-          session.projectName = path__namespace.basename(meta.cwd);
-          if (meta.git) {
-            session.gitBranch = meta.git.branch;
-            session.gitRepo = meta.git.repository_url;
+      const { stdout } = await execAsync("ps aux | grep -i codex | grep -v grep | awk '{print $2}'");
+      const pids = stdout.split("\n").map((line) => line.trim()).filter(Boolean).map((pid) => parseInt(pid, 10)).filter((pid) => !isNaN(pid));
+      const currentPids = /* @__PURE__ */ new Set();
+      for (const pid of pids) {
+        currentPids.add(pid);
+        try {
+          const { stdout: lsofOutput } = await execAsync(`lsof -p ${pid} 2>/dev/null | grep cwd | awk '{print $NF}'`);
+          const projectPath = lsofOutput.trim();
+          if (!projectPath || projectPath === "/") {
+            continue;
           }
-          this.emit("session-updated", session);
-        } else {
-          const session = {
-            id: sessionId,
-            projectPath: meta.cwd,
-            projectName: path__namespace.basename(meta.cwd),
-            userPrompt: "Session started",
-            startTime: meta.timestamp,
-            lastActivity: meta.timestamp,
-            status: SessionStatus.Active,
-            source: "codex",
-            messageCount: 0,
-            gitBranch: (_a = meta.git) == null ? void 0 : _a.branch,
-            gitRepo: (_b = meta.git) == null ? void 0 : _b.repository_url
-          };
-          this.sessions.set(sessionId, session);
-          this.emit("session-updated", session);
+          const projectName = path__namespace.basename(projectPath);
+          const now = (/* @__PURE__ */ new Date()).toISOString();
+          if (!this.processes.has(pid)) {
+            this.processes.set(pid, {
+              pid,
+              projectPath,
+              projectName,
+              lastSeen: now
+            });
+            console.log(`[CodexMonitor] New Codex process: ${projectName} (pid: ${pid})`);
+          } else {
+            const proc = this.processes.get(pid);
+            proc.lastSeen = now;
+            proc.projectPath = projectPath;
+            proc.projectName = projectName;
+          }
+          const sessionId = `codex-${pid}`;
+          const existingSession = this.sessions.get(sessionId);
+          if (!existingSession) {
+            const session = {
+              id: sessionId,
+              projectPath,
+              projectName,
+              userPrompt: `Working in ${projectName}`,
+              startTime: now,
+              lastActivity: now,
+              status: SessionStatus.Active,
+              source: "codex",
+              messageCount: 0
+            };
+            this.sessions.set(sessionId, session);
+            this.emit("session-updated", session);
+            console.log(`[CodexMonitor] Created session for ${projectName}`);
+          } else {
+            existingSession.lastActivity = now;
+            existingSession.status = SessionStatus.Active;
+            existingSession.projectPath = projectPath;
+            existingSession.projectName = projectName;
+            this.emit("session-updated", existingSession);
+          }
+        } catch (error) {
+          console.log(`[CodexMonitor] Could not get info for PID ${pid}`);
         }
       }
-      if (lines.length > 1) {
-        const lastLine = JSON.parse(lines[lines.length - 1]);
-        const sessionId = firstLine.payload.id;
-        if (this.sessions.has(sessionId)) {
+      for (const [pid, proc] of this.processes.entries()) {
+        if (!currentPids.has(pid)) {
+          const sessionId = `codex-${pid}`;
           const session = this.sessions.get(sessionId);
-          session.lastActivity = lastLine.timestamp;
-          const lastActivityTime = new Date(lastLine.timestamp).getTime();
-          const now = Date.now();
-          const fiveMinutes = 5 * 60 * 1e3;
-          session.status = now - lastActivityTime < fiveMinutes ? SessionStatus.Active : SessionStatus.Stopped;
-          this.emit("session-updated", session);
+          if (session && session.status === SessionStatus.Active) {
+            session.status = SessionStatus.Stopped;
+            session.lastActivity = proc.lastSeen;
+            this.emit("session-updated", session);
+            console.log(`[CodexMonitor] Codex process stopped: ${proc.projectName} (pid: ${pid})`);
+          }
+          const lastSeenTime = new Date(proc.lastSeen).getTime();
+          const fiveMinutesAgo = Date.now() - 5 * 60 * 1e3;
+          if (lastSeenTime < fiveMinutesAgo) {
+            this.processes.delete(pid);
+          }
         }
       }
     } catch (error) {
-      console.error("[CodexMonitor] Failed to process session file:", filePath, error);
+      console.error("[CodexMonitor] Error scanning processes:", error);
     }
   }
   /**

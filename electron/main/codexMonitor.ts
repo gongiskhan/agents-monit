@@ -1,81 +1,49 @@
 /**
- * Codex Session Monitor
+ * Codex Process Monitor
  *
- * Monitors Codex sessions by watching:
- * - ~/.codex/history.jsonl for new prompts
- * - ~/.codex/sessions/ for session files
+ * Monitors Codex sessions by watching running Codex processes
+ * Uses lsof to determine working directory of each process
  *
- * Since Codex doesn't support hooks, we use file watching.
+ * Much simpler and more reliable than file watching!
  */
 
 import { EventEmitter } from 'events';
-import * as fs from 'fs';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 import * as path from 'path';
-import * as os from 'os';
 import { Session, SessionStatus } from './types';
 
-interface CodexHistoryEntry {
-  session_id: string;
-  ts: number;
-  text: string;
-}
+const execAsync = promisify(exec);
 
-interface CodexSessionMeta {
-  id: string;
-  timestamp: string;
-  cwd: string;
-  originator: string;
-  cli_version: string;
-  git?: {
-    commit_hash: string;
-    branch: string;
-    repository_url: string;
-  };
-}
-
-interface CodexSessionFile {
-  timestamp: string;
-  type: string;
-  payload: any;
+interface CodexProcess {
+  pid: number;
+  projectPath: string;
+  projectName: string;
+  lastSeen: string;
 }
 
 export class CodexMonitor extends EventEmitter {
-  private codexDir: string;
-  private historyFile: string;
-  private sessionsDir: string;
-  private historyFileSize: number = 0;
   private sessions: Map<string, Session> = new Map();
-  private watchInterval: NodeJS.Timeout | null = null;
-  private sessionFilesWatched: Set<string> = new Set();
+  private processes: Map<number, CodexProcess> = new Map();
+  private scanInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
-    this.codexDir = path.join(os.homedir(), '.codex');
-    this.historyFile = path.join(this.codexDir, 'history.jsonl');
-    this.sessionsDir = path.join(this.codexDir, 'sessions');
   }
 
   /**
-   * Start monitoring Codex sessions
+   * Start monitoring Codex processes
    */
   async startWatching(): Promise<void> {
-    console.log('[CodexMonitor] Starting Codex session monitoring...');
-
-    // Check if Codex directory exists
-    if (!fs.existsSync(this.codexDir)) {
-      console.log('[CodexMonitor] Codex directory not found, monitoring disabled');
-      return;
-    }
+    console.log('[CodexMonitor] Starting Codex process monitoring...');
 
     // Initial scan
-    await this.scanHistory();
-    await this.scanSessions();
+    await this.scanProcesses();
 
-    // Watch for changes every 2 seconds
-    this.watchInterval = setInterval(async () => {
-      await this.watchHistory();
-      await this.scanSessions();
-    }, 2000);
+    // Scan every 3 seconds
+    this.scanInterval = setInterval(async () => {
+      await this.scanProcesses();
+    }, 3000);
 
     console.log('[CodexMonitor] Codex monitoring started');
   }
@@ -84,230 +52,123 @@ export class CodexMonitor extends EventEmitter {
    * Stop monitoring
    */
   stopWatching(): void {
-    if (this.watchInterval) {
-      clearInterval(this.watchInterval);
-      this.watchInterval = null;
+    if (this.scanInterval) {
+      clearInterval(this.scanInterval);
+      this.scanInterval = null;
     }
     console.log('[CodexMonitor] Codex monitoring stopped');
   }
 
   /**
-   * Watch history.jsonl for new entries
+   * Scan for running Codex processes
    */
-  private async watchHistory(): Promise<void> {
-    if (!fs.existsSync(this.historyFile)) {
-      return;
-    }
-
-    const stats = fs.statSync(this.historyFile);
-    const currentSize = stats.size;
-
-    // File has grown - read new entries
-    if (currentSize > this.historyFileSize) {
-      const stream = fs.createReadStream(this.historyFile, {
-        start: this.historyFileSize,
-        encoding: 'utf8'
-      });
-
-      let buffer = '';
-
-      stream.on('data', (chunk) => {
-        buffer += chunk;
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-        for (const line of lines) {
-          if (line.trim()) {
-            try {
-              const entry: CodexHistoryEntry = JSON.parse(line);
-              this.processHistoryEntry(entry);
-            } catch (error) {
-              console.error('[CodexMonitor] Failed to parse history entry:', error);
-            }
-          }
-        }
-      });
-
-      stream.on('end', () => {
-        this.historyFileSize = currentSize;
-      });
-    }
-  }
-
-  /**
-   * Initial scan of history file
-   */
-  private async scanHistory(): Promise<void> {
-    if (!fs.existsSync(this.historyFile)) {
-      return;
-    }
-
-    const content = fs.readFileSync(this.historyFile, 'utf8');
-    const lines = content.split('\n');
-
-    for (const line of lines) {
-      if (line.trim()) {
-        try {
-          const entry: CodexHistoryEntry = JSON.parse(line);
-          this.processHistoryEntry(entry);
-        } catch (error) {
-          // Skip invalid lines
-        }
-      }
-    }
-
-    const stats = fs.statSync(this.historyFile);
-    this.historyFileSize = stats.size;
-  }
-
-  /**
-   * Process a history entry
-   */
-  private processHistoryEntry(entry: CodexHistoryEntry): void {
-    const sessionId = entry.session_id;
-
-    if (!this.sessions.has(sessionId)) {
-      // Create new session
-      const session: Session = {
-        id: sessionId,
-        projectPath: 'Unknown', // Will be updated from session file
-        projectName: 'Codex Session',
-        userPrompt: entry.text.substring(0, 200),
-        startTime: new Date(entry.ts * 1000).toISOString(),
-        lastActivity: new Date(entry.ts * 1000).toISOString(),
-        status: SessionStatus.Active,
-        source: 'codex',
-        messageCount: 0
-      };
-
-      this.sessions.set(sessionId, session);
-      this.emit('session-updated', session);
-    } else {
-      // Update existing session
-      const session = this.sessions.get(sessionId)!;
-      session.lastActivity = new Date(entry.ts * 1000).toISOString();
-      session.userPrompt = entry.text.substring(0, 200);
-      this.emit('session-updated', session);
-    }
-  }
-
-  /**
-   * Scan sessions directory for session files
-   */
-  private async scanSessions(): Promise<void> {
-    if (!fs.existsSync(this.sessionsDir)) {
-      return;
-    }
-
-    // Walk through sessions/YYYY/MM/DD structure
-    const years = fs.readdirSync(this.sessionsDir);
-
-    for (const year of years) {
-      const yearPath = path.join(this.sessionsDir, year);
-      if (!fs.statSync(yearPath).isDirectory()) continue;
-
-      const months = fs.readdirSync(yearPath);
-
-      for (const month of months) {
-        const monthPath = path.join(yearPath, month);
-        if (!fs.statSync(monthPath).isDirectory()) continue;
-
-        const days = fs.readdirSync(monthPath);
-
-        for (const day of days) {
-          const dayPath = path.join(monthPath, day);
-          if (!fs.statSync(dayPath).isDirectory()) continue;
-
-          const sessionFiles = fs.readdirSync(dayPath)
-            .filter(f => f.endsWith('.jsonl'));
-
-          for (const file of sessionFiles) {
-            const filePath = path.join(dayPath, file);
-
-            // Only process if not already watched
-            if (!this.sessionFilesWatched.has(filePath)) {
-              await this.processSessionFile(filePath);
-              this.sessionFilesWatched.add(filePath);
-            }
-          }
-        }
-      }
-    }
-  }
-
-  /**
-   * Process a session file to extract metadata
-   */
-  private async processSessionFile(filePath: string): Promise<void> {
+  private async scanProcesses(): Promise<void> {
     try {
-      const content = fs.readFileSync(filePath, 'utf8');
-      const lines = content.split('\n').filter(l => l.trim());
+      // Find all running codex processes
+      const { stdout } = await execAsync('ps aux | grep -i codex | grep -v grep | awk \'{print $2}\'');
+      const pids = stdout
+        .split('\n')
+        .map(line => line.trim())
+        .filter(Boolean)
+        .map(pid => parseInt(pid, 10))
+        .filter(pid => !isNaN(pid));
 
-      if (lines.length === 0) return;
+      const currentPids = new Set<number>();
 
-      // Parse first line for session_meta
-      const firstLine: CodexSessionFile = JSON.parse(lines[0]);
+      for (const pid of pids) {
+        currentPids.add(pid);
 
-      if (firstLine.type === 'session_meta') {
-        const meta: CodexSessionMeta = firstLine.payload;
-        const sessionId = meta.id;
+        // Get working directory using lsof
+        try {
+          const { stdout: lsofOutput } = await execAsync(`lsof -p ${pid} 2>/dev/null | grep cwd | awk '{print $NF}'`);
+          const projectPath = lsofOutput.trim();
 
-        if (this.sessions.has(sessionId)) {
-          // Update session with metadata
-          const session = this.sessions.get(sessionId)!;
-          session.projectPath = meta.cwd;
-          session.projectName = path.basename(meta.cwd);
-
-          if (meta.git) {
-            session.gitBranch = meta.git.branch;
-            session.gitRepo = meta.git.repository_url;
+          if (!projectPath || projectPath === '/') {
+            continue;
           }
 
-          this.emit('session-updated', session);
-        } else {
-          // Create new session from file
-          const session: Session = {
-            id: sessionId,
-            projectPath: meta.cwd,
-            projectName: path.basename(meta.cwd),
-            userPrompt: 'Session started',
-            startTime: meta.timestamp,
-            lastActivity: meta.timestamp,
-            status: SessionStatus.Active,
-            source: 'codex',
-            messageCount: 0,
-            gitBranch: meta.git?.branch,
-            gitRepo: meta.git?.repository_url
-          };
+          const projectName = path.basename(projectPath);
+          const now = new Date().toISOString();
 
-          this.sessions.set(sessionId, session);
-          this.emit('session-updated', session);
+          // Update or create process record
+          if (!this.processes.has(pid)) {
+            // New process discovered
+            this.processes.set(pid, {
+              pid,
+              projectPath,
+              projectName,
+              lastSeen: now
+            });
+
+            console.log(`[CodexMonitor] New Codex process: ${projectName} (pid: ${pid})`);
+          } else {
+            // Update existing process
+            const proc = this.processes.get(pid)!;
+            proc.lastSeen = now;
+            proc.projectPath = projectPath;
+            proc.projectName = projectName;
+          }
+
+          // Create or update session
+          const sessionId = `codex-${pid}`;
+          const existingSession = this.sessions.get(sessionId);
+
+          if (!existingSession) {
+            // Create new session
+            const session: Session = {
+              id: sessionId,
+              projectPath,
+              projectName,
+              userPrompt: `Working in ${projectName}`,
+              startTime: now,
+              lastActivity: now,
+              status: SessionStatus.Active,
+              source: 'codex',
+              messageCount: 0
+            };
+
+            this.sessions.set(sessionId, session);
+            this.emit('session-updated', session);
+            console.log(`[CodexMonitor] Created session for ${projectName}`);
+          } else {
+            // Update existing session
+            existingSession.lastActivity = now;
+            existingSession.status = SessionStatus.Active;
+            existingSession.projectPath = projectPath;
+            existingSession.projectName = projectName;
+            this.emit('session-updated', existingSession);
+          }
+        } catch (error) {
+          // lsof failed for this PID - might be a short-lived process
+          console.log(`[CodexMonitor] Could not get info for PID ${pid}`);
         }
       }
 
-      // Get last activity from last line
-      if (lines.length > 1) {
-        const lastLine: CodexSessionFile = JSON.parse(lines[lines.length - 1]);
-        const sessionId = firstLine.payload.id;
+      // Mark stopped processes
+      for (const [pid, proc] of this.processes.entries()) {
+        if (!currentPids.has(pid)) {
+          // Process no longer running
+          const sessionId = `codex-${pid}`;
+          const session = this.sessions.get(sessionId);
 
-        if (this.sessions.has(sessionId)) {
-          const session = this.sessions.get(sessionId)!;
-          session.lastActivity = lastLine.timestamp;
+          if (session && session.status === SessionStatus.Active) {
+            session.status = SessionStatus.Stopped;
+            session.lastActivity = proc.lastSeen;
+            this.emit('session-updated', session);
+            console.log(`[CodexMonitor] Codex process stopped: ${proc.projectName} (pid: ${pid})`);
+          }
 
-          // Check if session is still active (within last 5 minutes)
-          const lastActivityTime = new Date(lastLine.timestamp).getTime();
-          const now = Date.now();
-          const fiveMinutes = 5 * 60 * 1000;
+          // Remove old processes (keep for 5 minutes after stopping)
+          const lastSeenTime = new Date(proc.lastSeen).getTime();
+          const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
 
-          session.status = (now - lastActivityTime) < fiveMinutes
-            ? SessionStatus.Active
-            : SessionStatus.Stopped;
-
-          this.emit('session-updated', session);
+          if (lastSeenTime < fiveMinutesAgo) {
+            this.processes.delete(pid);
+          }
         }
       }
     } catch (error) {
-      console.error('[CodexMonitor] Failed to process session file:', filePath, error);
+      console.error('[CodexMonitor] Error scanning processes:', error);
     }
   }
 

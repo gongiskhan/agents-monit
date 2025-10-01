@@ -326,6 +326,11 @@ class CodexMonitor extends events.EventEmitter {
           const sessionId = `codex-${pid}`;
           const existingSession = this.sessions.get(sessionId);
           if (!existingSession) {
+            const recentActivity = await this.hasRecentActivity(projectPath);
+            if (!recentActivity) {
+              console.log(`[CodexMonitor] Skipping stale project: ${projectName} (no recent activity)`);
+              continue;
+            }
             const session = {
               id: sessionId,
               projectPath,
@@ -370,6 +375,23 @@ class CodexMonitor extends events.EventEmitter {
       }
     } catch (error) {
       console.error("[CodexMonitor] Error scanning processes:", error);
+    }
+  }
+  /**
+   * Check if a project has had recent activity in Codex log
+   */
+  async hasRecentActivity(projectPath) {
+    try {
+      const logFile2 = require("path").join(require("os").homedir(), ".codex", "log", "codex-tui.log");
+      const { exec: exec2 } = require("child_process");
+      const { promisify: promisify2 } = require("util");
+      const execAsync2 = promisify2(exec2);
+      const cmd = `tail -200 "${logFile2}" 2>/dev/null | grep -c "${projectPath}" || echo 0`;
+      const { stdout } = await execAsync2(cmd);
+      const count = parseInt(stdout.trim(), 10);
+      return count > 0;
+    } catch (error) {
+      return true;
     }
   }
   /**

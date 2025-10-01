@@ -114,7 +114,15 @@ export class CodexMonitor extends EventEmitter {
           const existingSession = this.sessions.get(sessionId);
 
           if (!existingSession) {
-            // Create new session
+            // Create new session only if this is a fresh process
+            // Check if we've seen activity in this project recently
+            const recentActivity = await this.hasRecentActivity(projectPath);
+
+            if (!recentActivity) {
+              console.log(`[CodexMonitor] Skipping stale project: ${projectName} (no recent activity)`);
+              continue;
+            }
+
             const session: Session = {
               id: sessionId,
               projectPath,
@@ -169,6 +177,30 @@ export class CodexMonitor extends EventEmitter {
       }
     } catch (error) {
       console.error('[CodexMonitor] Error scanning processes:', error);
+    }
+  }
+
+  /**
+   * Check if a project has had recent activity in Codex log
+   */
+  private async hasRecentActivity(projectPath: string): Promise<boolean> {
+    try {
+      // Check if codex log has recent entries for this project (last 10 minutes)
+      const logFile = require('path').join(require('os').homedir(), '.codex', 'log', 'codex-tui.log');
+      const { exec } = require('child_process');
+      const { promisify } = require('util');
+      const execAsync = promisify(exec);
+
+      // Get last 200 lines of log and check for this project path
+      const cmd = `tail -200 "${logFile}" 2>/dev/null | grep -c "${projectPath}" || echo 0`;
+      const { stdout } = await execAsync(cmd);
+      const count = parseInt(stdout.trim(), 10);
+
+      // If we found mentions of this project in recent logs, consider it active
+      return count > 0;
+    } catch (error) {
+      // If we can't check, assume it's active (conservative approach)
+      return true;
     }
   }
 

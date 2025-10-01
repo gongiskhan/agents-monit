@@ -60,10 +60,18 @@ export const SessionList: React.FC = () => {
     };
   }, []);
 
-  // Sort sessions by last activity (most recent first)
+  // Stable sort: Active sessions first (by first seen), then inactive (by first seen)
+  // This prevents tiles from jumping around as activity updates
   const sortedSessions = Array.isArray(sessions)
     ? [...sessions].sort((a, b) => {
-        return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+        // First, group by status (active first)
+        if (a.status !== b.status) {
+          return a.status === 'active' ? -1 : 1;
+        }
+
+        // Within same status, sort by start time (oldest first for stability)
+        // This keeps tiles in a fixed position unless status changes
+        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
       })
     : [];
 

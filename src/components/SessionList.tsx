@@ -7,6 +7,36 @@ export const SessionList: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hiddenSessionIds, setHiddenSessionIds] = useState<Set<string>>(() => {
+    // Load hidden sessions from localStorage
+    const stored = localStorage.getItem('hiddenSessions');
+    return stored ? new Set(JSON.parse(stored)) : new Set();
+  });
+
+  // Save hidden sessions to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem('hiddenSessions', JSON.stringify(Array.from(hiddenSessionIds)));
+  }, [hiddenSessionIds]);
+
+  // Auto-unhide sessions when they become active
+  useEffect(() => {
+    if (!Array.isArray(sessions)) return;
+
+    const activeSessions = sessions.filter(s => s.status === 'active');
+    const shouldUpdate = activeSessions.some(s => hiddenSessionIds.has(s.id));
+
+    if (shouldUpdate) {
+      setHiddenSessionIds(prev => {
+        const newSet = new Set(prev);
+        activeSessions.forEach(s => newSet.delete(s.id));
+        return newSet;
+      });
+    }
+  }, [sessions, hiddenSessionIds]);
+
+  const handleHideSession = (sessionId: string) => {
+    setHiddenSessionIds(prev => new Set(prev).add(sessionId));
+  };
 
   const fetchSessions = async (isInitialLoad = false) => {
     try {
@@ -60,20 +90,26 @@ export const SessionList: React.FC = () => {
     };
   }, []);
 
-  // Stable sort: Active sessions first (by first seen), then inactive (by first seen)
-  // This prevents tiles from jumping around as activity updates
-  const sortedSessions = Array.isArray(sessions)
-    ? [...sessions].sort((a, b) => {
-        // First, group by status (active first)
-        if (a.status !== b.status) {
-          return a.status === 'active' ? -1 : 1;
-        }
-
-        // Within same status, sort by start time (oldest first for stability)
-        // This keeps tiles in a fixed position unless status changes
-        return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+  // Filter out hidden inactive sessions, then stable sort
+  const visibleSessions = Array.isArray(sessions)
+    ? sessions.filter(session => {
+        // Hide sessions that are both stopped AND in the hidden set
+        return !(session.status === 'stopped' && hiddenSessionIds.has(session.id));
       })
     : [];
+
+  // Stable sort: Active sessions first (by first seen), then inactive (by first seen)
+  // This prevents tiles from jumping around as activity updates
+  const sortedSessions = [...visibleSessions].sort((a, b) => {
+    // First, group by status (active first)
+    if (a.status !== b.status) {
+      return a.status === 'active' ? -1 : 1;
+    }
+
+    // Within same status, sort by start time (oldest first for stability)
+    // This keeps tiles in a fixed position unless status changes
+    return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+  });
 
   if (loading) {
     return (
@@ -114,7 +150,11 @@ export const SessionList: React.FC = () => {
       </div>
       <div className="session-grid">
         {sortedSessions.map(session => (
-          <SessionCard key={session.id} session={session} />
+          <SessionCard
+            key={session.id}
+            session={session}
+            onHide={handleHideSession}
+          />
         ))}
       </div>
     </div>

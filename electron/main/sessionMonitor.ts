@@ -72,10 +72,24 @@ export class SessionMonitor extends EventEmitter {
 
     // Start Codex monitoring
     if (this.codexMonitor) {
-      await this.codexMonitor.startWatching();
       this.codexMonitor.on('session-updated', (codexSession: Session) => {
         this.mergeCodexSession(codexSession);
       });
+
+      await this.codexMonitor.startWatching();
+
+      const initialCodexSessions = this.codexMonitor.getSessions();
+      if (initialCodexSessions.length > 0) {
+        let hasUpdates = false;
+
+        for (const codexSession of initialCodexSessions) {
+          hasUpdates = this.mergeCodexSession(codexSession, true) || hasUpdates;
+        }
+
+        if (hasUpdates) {
+          this.emit('sessions-updated', this.getSessions());
+        }
+      }
     }
 
     // Initial scan of hook-created sessions
@@ -350,24 +364,31 @@ export class SessionMonitor extends EventEmitter {
     this.emit('sessions-updated', this.getSessions());
   }
 
-  private mergeCodexSession(codexSession: Session): void {
+  private mergeCodexSession(codexSession: Session, suppressEmit = false): boolean {
     // Merge or update Codex session in the main sessions map
     const existingSession = this.sessions.get(codexSession.id);
+    let changed = false;
 
     if (!existingSession || existingSession.source === 'codex') {
       // No existing session or it's also from Codex - update it
       this.sessions.set(codexSession.id, codexSession);
       console.log(`Codex session ${codexSession.projectName}: status=${codexSession.status}, lastActivity=${codexSession.lastActivity}`);
-      this.emit('sessions-updated', this.getSessions());
+      changed = true;
     } else {
       // Existing session from another source - merge data
       if (new Date(codexSession.lastActivity) > new Date(existingSession.lastActivity)) {
         existingSession.lastActivity = codexSession.lastActivity;
         existingSession.status = codexSession.status;
         existingSession.userPrompt = codexSession.userPrompt;
-        this.emit('sessions-updated', this.getSessions());
+        changed = true;
       }
     }
+
+    if (changed && !suppressEmit) {
+      this.emit('sessions-updated', this.getSessions());
+    }
+
+    return changed;
   }
 
   getSessions(): Session[] {

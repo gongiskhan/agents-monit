@@ -136,7 +136,7 @@ export const SessionList: React.FC = () => {
       <div className="empty-state">
         <div className="empty-icon">📋</div>
         <h2>No active sessions</h2>
-        <p>Claude Code sessions will appear here when they're running</p>
+        <p>Claude Code and Codex sessions will appear here when they're running</p>
       </div>
     );
   }

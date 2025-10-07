@@ -17,10 +17,26 @@ export interface Message {
 
 export interface Session {
   id: string;
-  projectName: string;
   projectPath: string;
-  status: SessionStatus;
+  projectName: string;
   lastActivity: string;
-  latestMessage?: Message;
-  filePath: string;
+  status: SessionStatus;
+  latestMessage?: {
+    type: MessageType;
+    content: string;
+    timestamp: string;
+  };
+  messageCount: number;
+  startTime: string;
+  userPrompt?: string;
+  toolCalls?: Array<{
+    tool: string;
+    timestamp: string;
+    description: string;
+  }>;
+  finalResponse?: string;
+  source?: 'hook' | 'process' | 'history' | 'codex';
+  gitBranch?: string;
+  gitRepo?: string;
+  filePath?: string; // Optional for backward compatibility
 }

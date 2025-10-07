@@ -110,6 +110,7 @@ describe('SessionList', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/No active sessions/i)).toBeInTheDocument();
+      expect(screen.getByText(/Claude Code and Codex sessions will appear here/i)).toBeInTheDocument();
     });
   });
 

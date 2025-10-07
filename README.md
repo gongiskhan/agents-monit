@@ -9,6 +9,7 @@ A desktop application built with Electron and React to monitor active Claude Cod
   - Process monitoring (detects running Claude instances)
   - History monitoring (reads from Claude's history file)
   - Hook monitoring (integrates with your Claude hooks)
+  - Codex rollout monitoring (parses `~/.codex/sessions` activity)
 - ✅ **Active Status Indicators**: Green pulsing indicators show active sessions
 - ✅ **Session Details**: Shows project name, path, and last activity
 - ✅ **Settings Panel**: Collapsible settings accessed via gear button
@@ -69,6 +70,13 @@ The app monitors Claude Code sessions through three complementary methods:
 1. **Process Monitoring**: Scans for running Claude processes every 5 seconds
 2. **History Monitoring**: Watches `~/.claude/history.jsonl` for activity
 3. **Hook Monitoring**: Reads session files from `~/.claude/active_sessions/`
+4. **Codex Rollout Monitoring**: Streams Codex CLI rollouts from `~/.codex/sessions/**/rollout-*.jsonl`
+
+### Codex support tips
+
+- The Codex CLI records rollouts by default under `~/.codex/sessions`. Leave persistence enabled (`[history] persistence = "save-all"`) so the monitor can track activity.
+- If you relocate `CODEX_HOME`, the app will follow automatically because it resolves `~/.codex` relative to the logged-in user.
+- The first Codex event might surface with a generic project name until Codex emits a `session_meta` line containing the working directory. Run Codex inside the project you want to monitor for best results.
 
 Sessions are marked as "active" if they've had activity within the last 5 minutes.
 

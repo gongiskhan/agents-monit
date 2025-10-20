@@ -1,0 +1,57 @@
+{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type PreToolUse < /dev/stdin"
+      }]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type PostToolUse < /dev/stdin"
+      }]
+    }],
+    "UserPromptSubmit": [{
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type UserPromptSubmit < /dev/stdin"
+      }]
+    }],
+    "Notification": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type Notification < /dev/stdin"
+      }]
+    }],
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type Stop < /dev/stdin"
+      }]
+    }],
+    "SubagentStop": [{
+      "matcher": "",
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type SubagentStop < /dev/stdin"
+      }]
+    }],
+    "SessionStart": [{
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type SessionStart < /dev/stdin"
+      }]
+    }],
+    "SessionEnd": [{
+      "hooks": [{
+        "type": "command",
+        "command": "python3 .claude/hooks/send_to_server.py --event-type SessionEnd < /dev/stdin"
+      }]
+    }]
+  }
+}

@@ -1,15 +1,19 @@
 {
-  "name": "agents-monit",
+  "name": "agent-bro",
   "private": true,
-  "version": "0.1.0",
-  "main": "dist-electron/index.js",
+  "version": "1.0.0",
+  "description": "Agent Bro - Claude Code Web Monitor",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && electron .\"",
-    "dev:web": "vite",
-    "build": "tsc && vite build && electron-builder",
-    "preview": "vite preview",
-    "electron": "electron .",
-    "setup": "./setup.sh"
+    "dev": "concurrently -k \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "build": "npm run build:server && npm run build:client",
+    "build:server": "cd server && npm run build",
+    "build:client": "cd client && npm run build",
+    "start": "npm run start:server",
+    "start:server": "cd server && npm start",
+    "install:all": "npm install && cd server && npm install && cd ../client && npm install",
+    "clean": "rm -rf server/dist server/node_modules client/dist client/node_modules node_modules"
   },
   "dependencies": {
     "react": "^18.2.0",

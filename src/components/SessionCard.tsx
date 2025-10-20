@@ -1,21 +1,38 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { invoke } from '../api/electronAPI';
-import { Session, SessionStatus, MessageType } from '../types/session';
+import { Session, SessionStatus, MessageType, TabCategory } from '../types/session';
 
 interface SessionCardProps {
   session: Session;
-  onHide: (sessionId: string) => void;
+  onMoveSession: (sessionId: string, newCategory: TabCategory) => void;
+  onUpdateName: (sessionId: string, newName: string) => void;
+  onToggleActive: (sessionId: string) => void;
+  isSelected?: boolean;
+  onSelect?: (sessionId: string, selected: boolean) => void;
 }
 
-export const SessionCard: React.FC<SessionCardProps> = ({ session, onHide }) => {
-  // Debug log to see what status we're receiving
-  React.useEffect(() => {
-    if (session.status === 'active') {
-      console.log(`Active session card: ${session.projectName} - status: ${session.status}`);
+export const SessionCard: React.FC<SessionCardProps> = ({
+  session,
+  onMoveSession,
+  onUpdateName,
+  onToggleActive,
+  isSelected = false,
+  onSelect,
+}) => {
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState(session.customName || session.projectName);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditingName && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
     }
-  }, [session.status, session.projectName]);
+  }, [isEditingName]);
 
   const handleClick = async () => {
+    if (isEditingName) return; // Don't trigger card click when editing
+
     try {
       await invoke('focus-window', { sessionId: session.id });
     } catch (error) {
@@ -24,31 +41,23 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session, onHide }) => 
   };
 
   const handleOpenProject = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the card click
-    console.log('handleOpenProject called');
+    e.stopPropagation();
     try {
       const savedSettings = localStorage.getItem('notificationSettings');
-      console.log('savedSettings:', savedSettings);
-
       const settings = savedSettings ? JSON.parse(savedSettings) : {
         openCommand: 'cursor',
         projectsHomeFolder: ''
       };
-
-      console.log('settings:', settings);
-      console.log('projectPath:', `${settings.projectsHomeFolder}/${session.projectName}`);
 
       if (!settings.projectsHomeFolder) {
         alert('Please configure "Projects home folder" in settings first!');
         return;
       }
 
-      console.log('Calling invoke open-project');
       await invoke('open-project', {
         command: settings.openCommand,
         projectPath: `${settings.projectsHomeFolder}/${session.projectName}`
       });
-      console.log('invoke completed');
     } catch (error) {
       console.error('Failed to open project:', error);
       alert(`Failed to open project: ${error}`);
@@ -56,25 +65,19 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session, onHide }) => 
   };
 
   const handleCreateWorktree = async (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the card click
-    console.log('handleCreateWorktree called');
+    e.stopPropagation();
     try {
       const savedSettings = localStorage.getItem('notificationSettings');
-      console.log('savedSettings:', savedSettings);
-
       const settings = savedSettings ? JSON.parse(savedSettings) : {
         openCommand: 'cursor',
         projectsHomeFolder: ''
       };
-
-      console.log('settings:', settings);
 
       if (!settings.projectsHomeFolder) {
         alert('Please configure "Projects home folder" in settings first!');
         return;
       }
 
-      console.log('Calling invoke create-worktree');
       const result = await invoke<{ success: boolean; worktreePath?: string; error?: string }>('create-worktree', {
         projectPath: `${settings.projectsHomeFolder}/${session.projectName}`,
         projectName: session.projectName,
@@ -82,14 +85,10 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session, onHide }) => 
         command: settings.openCommand
       });
 
-      console.log('create-worktree result:', result);
-
       if (result.success && result.worktreePath) {
         alert(`Worktree created and opened: ${result.worktreePath}`);
-        console.log(`Worktree created and opened: ${result.worktreePath}`);
       } else {
         alert(`Failed to create worktree: ${result.error}`);
-        console.error('Failed to create worktree:', result.error);
       }
     } catch (error) {
       console.error('Failed to create worktree:', error);
@@ -97,15 +96,39 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session, onHide }) => 
     }
   };
 
-  const handleHideClick = (e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent triggering the card click
-    onHide(session.id);
+  const handleNameClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsEditingName(true);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleClick();
+  const handleNameBlur = () => {
+    setIsEditingName(false);
+    if (editedName.trim() && editedName !== (session.customName || session.projectName)) {
+      onUpdateName(session.id, editedName.trim());
+    } else {
+      setEditedName(session.customName || session.projectName);
+    }
+  };
+
+  const handleNameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleNameBlur();
+    } else if (e.key === 'Escape') {
+      setEditedName(session.customName || session.projectName);
+      setIsEditingName(false);
+    }
+  };
+
+  const handleActiveClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleActive(session.id);
+  };
+
+  const handleSelectChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.stopPropagation();
+    if (onSelect) {
+      onSelect(session.id, e.target.checked);
     }
   };
 
@@ -147,86 +170,180 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session, onHide }) => 
     }
   };
 
+  // Calculate if session is inactive for more than 3 minutes
+  const getInactiveTime = (): number => {
+    if (session.status === SessionStatus.Active) return 0;
+    const now = new Date();
+    const lastActivity = new Date(session.lastActivity);
+    return Math.floor((now.getTime() - lastActivity.getTime()) / 1000 / 60); // minutes
+  };
+
+  const inactiveMinutes = getInactiveTime();
+  const showRedBorder = session.tabCategory === 'current' && inactiveMinutes >= 3;
+  const showGreenBorder = session.status === SessionStatus.Active;
+
+  // Determine border class
+  let borderClass = '';
+  if (showGreenBorder) borderClass = 'session-card-active-border';
+  else if (showRedBorder) borderClass = 'session-card-inactive-border';
+
+  // Render action buttons based on current tab
+  const renderActions = () => {
+    if (session.tabCategory === 'current') {
+      return (
+        <button
+          className="move-button move-to-hold"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMoveSession(session.id, 'on-hold');
+          }}
+          title="Move to On Hold"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="6" y="4" width="4" height="16"></rect>
+            <rect x="14" y="4" width="4" height="16"></rect>
+          </svg>
+        </button>
+      );
+    } else if (session.tabCategory === 'on-hold') {
+      return (
+        <>
+          <button
+            className="move-button move-to-current"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveSession(session.id, 'current');
+            }}
+            title="Move to Current"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+          </button>
+          <button
+            className="move-button move-to-archive"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveSession(session.id, 'archive');
+            }}
+            title="Move to Archive"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="21 8 21 21 3 21 3 8"></polyline>
+              <rect x="1" y="3" width="22" height="5"></rect>
+              <line x1="10" y1="12" x2="14" y2="12"></line>
+            </svg>
+          </button>
+        </>
+      );
+    } else if (session.tabCategory === 'archive') {
+      return (
+        <>
+          {onSelect && (
+            <label className="checkbox-wrapper" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={handleSelectChange}
+                title="Select for deletion"
+              />
+            </label>
+          )}
+          <button
+            className="move-button move-to-hold"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMoveSession(session.id, 'on-hold');
+            }}
+            title="Move to On Hold"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="6" y="4" width="4" height="16"></rect>
+              <rect x="14" y="4" width="4" height="16"></rect>
+            </svg>
+          </button>
+        </>
+      );
+    }
+  };
+
   return (
     <div
-      className="session-card"
+      className={`session-card ${borderClass}`}
       onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      onMouseEnter={(e) => e.currentTarget.classList.add('session-card-hover')}
-      onMouseLeave={(e) => e.currentTarget.classList.remove('session-card-hover')}
-      aria-label={`Focus on ${session.projectName}`}
+      aria-label={`Focus on ${session.customName || session.projectName}`}
       data-testid={`session-${session.id}`}
       role="button"
       tabIndex={0}
     >
       <div className="session-card-header">
         <div className="session-info">
-          <h3 className="project-name" title={session.projectPath}>
-            {session.projectName}
-          </h3>
+          {isEditingName ? (
+            <input
+              ref={inputRef}
+              type="text"
+              className="project-name-edit"
+              value={editedName}
+              onChange={(e) => setEditedName(e.target.value)}
+              onBlur={handleNameBlur}
+              onKeyDown={handleNameKeyDown}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div className="project-name-wrapper" onClick={handleNameClick} title="Click to edit name">
+              <h3 className="project-name">
+                {session.customName || session.projectName}
+              </h3>
+              <svg className="edit-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              </svg>
+            </div>
+          )}
           <span className="session-id">{session.id}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }} onClick={(e) => e.stopPropagation()}>
-          <button
-            className="worktree-button"
-            onClick={(e) => {
-              console.log('WORKTREE BUTTON CLICKED!');
-              handleCreateWorktree(e);
-            }}
-            onMouseDown={(e) => {
-              console.log('WORKTREE BUTTON MOUSE DOWN!');
-              e.stopPropagation();
-            }}
-            aria-label="Create new version (worktree)"
-            title="Create new version (worktree)"
-            type="button"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="18" cy="18" r="3"></circle>
-              <circle cx="6" cy="6" r="3"></circle>
-              <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
-              <line x1="6" y1="9" x2="6" y2="21"></line>
-            </svg>
-          </button>
-          <button
-            className="open-project-button"
-            onClick={(e) => {
-              console.log('OPEN PROJECT BUTTON CLICKED!');
-              handleOpenProject(e);
-            }}
-            onMouseDown={(e) => {
-              console.log('OPEN PROJECT BUTTON MOUSE DOWN!');
-              e.stopPropagation();
-            }}
-            aria-label="Open project in editor"
-            title="Open project in editor"
-            type="button"
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <line x1="10" y1="14" x2="21" y2="3"></line>
-            </svg>
-          </button>
-          {session.status === SessionStatus.Stopped && (
-            <button
-              className="hide-button"
-              onClick={handleHideClick}
-              onMouseDown={(e) => e.stopPropagation()}
-              aria-label="Hide session"
-              title="Hide session"
-              type="button"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                <line x1="1" y1="1" x2="23" y2="23"></line>
-              </svg>
-            </button>
+          {!session.isManual && (
+            <>
+              <button
+                className="worktree-button"
+                onClick={handleCreateWorktree}
+                onMouseDown={(e) => e.stopPropagation()}
+                aria-label="Create new version (worktree)"
+                title="Create new version (worktree)"
+                type="button"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="18" cy="18" r="3"></circle>
+                  <circle cx="6" cy="6" r="3"></circle>
+                  <path d="M13 6h3a2 2 0 0 1 2 2v7"></path>
+                  <line x1="6" y1="9" x2="6" y2="21"></line>
+                </svg>
+              </button>
+              <button
+                className="open-project-button"
+                onClick={handleOpenProject}
+                onMouseDown={(e) => e.stopPropagation()}
+                aria-label="Open project in editor"
+                title="Open project in editor"
+                type="button"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <line x1="10" y1="14" x2="21" y2="3"></line>
+                </svg>
+              </button>
+            </>
           )}
+          {renderActions()}
           <div
             className={`status-indicator ${getStatusClass()}`}
             data-testid={`${session.id}-status`}
             aria-label={`${session.status} session`}
+            onClick={handleActiveClick}
+            title="Click to toggle active/inactive"
+            style={{ cursor: 'pointer' }}
           />
         </div>
       </div>

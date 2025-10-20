@@ -24,7 +24,9 @@ export class CodexMonitor extends EventEmitter {
   private watcher: chokidar.FSWatcher | null = null;
   private sessions: Map<string, Session> = new Map();
   private fileToSessionId: Map<string, string> = new Map();
+  private fileMtimes: Map<string, number> = new Map();
   private statusInterval: NodeJS.Timeout | null = null;
+  private pollInterval: NodeJS.Timeout | null = null;
 
   constructor() {
     super();
@@ -56,6 +58,7 @@ export class CodexMonitor extends EventEmitter {
       .on('error', (error) => console.error('[CodexMonitor] Watch error:', error));
 
     this.statusInterval = setInterval(() => this.markStaleSessions(), 60_000);
+    this.pollInterval = setInterval(() => this.pollRolloutFiles(), 10_000);
 
     console.log('[CodexMonitor] Watching', this.sessionsDir);
   }
@@ -71,8 +74,14 @@ export class CodexMonitor extends EventEmitter {
       this.statusInterval = null;
     }
 
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+
     this.sessions.clear();
     this.fileToSessionId.clear();
+    this.fileMtimes.clear();
 
     console.log('[CodexMonitor] Codex monitoring stopped');
   }
@@ -127,6 +136,9 @@ export class CodexMonitor extends EventEmitter {
     if (!fs.existsSync(filePath)) {
       return;
     }
+
+    const stat = fs.statSync(filePath);
+    this.fileMtimes.set(filePath, stat.mtimeMs);
 
     const raw = fs.readFileSync(filePath, 'utf8');
     if (!raw.trim()) {
@@ -302,6 +314,7 @@ export class CodexMonitor extends EventEmitter {
     }
 
     this.fileToSessionId.delete(filePath);
+    this.fileMtimes.delete(filePath);
   }
 
   private normalizeTimestamp(raw?: string): string | null {
@@ -309,14 +322,18 @@ export class CodexMonitor extends EventEmitter {
       return null;
     }
 
-    let normalized = raw;
+    const trimmed = raw.trim();
+    const direct = new Date(trimmed);
+    if (!Number.isNaN(direct.getTime())) {
+      return direct.toISOString();
+    }
 
-    normalized = normalized.replace(
+    let normalized = trimmed.replace(
       /(T\d{2})-(\d{2})-(\d{2})(\.[0-9A-Za-z:+-]+)?/,
       (_match, hour, minute, second, fraction = '') => `${hour}:${minute}:${second}${fraction}`
     );
 
-    if (!/[Z+-]$/.test(normalized)) {
+    if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(normalized)) {
       normalized += 'Z';
     }
 
@@ -381,5 +398,24 @@ export class CodexMonitor extends EventEmitter {
     updatedSessions.forEach((session) => {
       this.emit('session-updated', session);
     });
+  }
+
+  private pollRolloutFiles(): void {
+    for (const filePath of this.fileToSessionId.keys()) {
+      try {
+        if (!fs.existsSync(filePath)) {
+          continue;
+        }
+
+        const currentMtime = fs.statSync(filePath).mtimeMs;
+        const lastMtime = this.fileMtimes.get(filePath) || 0;
+
+        if (currentMtime > lastMtime + 1) {
+          this.safeProcessFile(filePath, 'poll');
+        }
+      } catch (error) {
+        console.error('[CodexMonitor] Poll error:', error);
+      }
+    }
   }
 }

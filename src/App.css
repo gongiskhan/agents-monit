@@ -938,6 +938,450 @@ body::before {
   border-color: rgba(82, 82, 91, 0.6);
 }
 
+/* Tabs Container */
+.tabs-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  gap: 1rem;
+}
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.tab {
+  background: rgba(82, 82, 91, 0.2);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(82, 82, 91, 0.3);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.25rem;
+  color: #a1a1aa;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tab:hover {
+  background: rgba(82, 82, 91, 0.3);
+  border-color: rgba(82, 82, 91, 0.5);
+  transform: translateY(-1px);
+}
+
+.tab-active {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.3) 100%);
+  border-color: rgba(16, 185, 129, 0.5);
+  color: #6ee7b7;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.tab-count {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.5rem;
+  font-size: 0.8125rem;
+  font-family: 'SF Mono', 'Monaco', 'Courier New', monospace;
+}
+
+/* Add Session Button */
+.add-session-button {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.2) 0%, rgba(5, 150, 105, 0.3) 100%);
+  border: 1px solid rgba(16, 185, 129, 0.5);
+  color: #6ee7b7;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+}
+
+.add-session-button:hover {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.3) 0%, rgba(5, 150, 105, 0.4) 100%);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.4);
+}
+
+/* Session Card Borders */
+.session-card-active-border {
+  border: 2px solid rgba(16, 185, 129, 0.6);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(16, 185, 129, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.session-card-inactive-border {
+  border: 2px solid rgba(220, 38, 38, 0.8);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    0 0 20px rgba(220, 38, 38, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Editable Project Name */
+.project-name-edit {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #f4f4f5;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(82, 82, 91, 0.5);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  outline: none;
+  transition: all 0.3s;
+  width: 100%;
+}
+
+.project-name-edit:focus {
+  border-color: rgba(16, 185, 129, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+}
+
+.project-name-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  margin: -0.25rem;
+  border-radius: 0.375rem;
+  transition: all 0.2s;
+}
+
+.project-name-wrapper:hover {
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.project-name {
+  transition: color 0.2s;
+  margin: 0;
+}
+
+.project-name-wrapper:hover .project-name {
+  color: #6ee7b7;
+}
+
+.edit-icon {
+  opacity: 0;
+  transition: opacity 0.2s;
+  color: #a1a1aa;
+}
+
+.project-name-wrapper:hover .edit-icon {
+  opacity: 1;
+}
+
+body.light-theme .edit-icon {
+  color: #6e6e73;
+}
+
+body.light-theme .project-name-wrapper:hover {
+  background: rgba(16, 185, 129, 0.15);
+}
+
+/* Move Buttons */
+.move-button {
+  background: rgba(82, 82, 91, 0.2);
+  border: 1px solid rgba(82, 82, 91, 0.3);
+  border-radius: 0.5rem;
+  padding: 0.375rem;
+  color: #a1a1aa;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.move-button:hover {
+  background: rgba(82, 82, 91, 0.4);
+  border-color: rgba(82, 82, 91, 0.5);
+  color: #d4d4d8;
+  transform: translateY(-1px);
+}
+
+.move-to-hold {
+  background: rgba(251, 191, 36, 0.15);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+}
+
+.move-to-hold:hover {
+  background: rgba(251, 191, 36, 0.25);
+  border-color: rgba(251, 191, 36, 0.5);
+}
+
+.move-to-current {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.move-to-current:hover {
+  background: rgba(16, 185, 129, 0.25);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.move-to-archive {
+  background: rgba(139, 92, 246, 0.15);
+  border-color: rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
+}
+
+.move-to-archive:hover {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.5);
+}
+
+/* Checkbox for Archive */
+.checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.checkbox-wrapper input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  border-radius: 0.375rem;
+  border: 2px solid rgba(82, 82, 91, 0.5);
+  background: rgba(0, 0, 0, 0.3);
+  position: relative;
+  transition: all 0.3s;
+}
+
+.checkbox-wrapper input[type="checkbox"]:hover {
+  border-color: rgba(82, 82, 91, 0.7);
+}
+
+.checkbox-wrapper input[type="checkbox"]:checked {
+  background: linear-gradient(135deg, #6ee7b7 0%, #10b981 100%);
+  border-color: #10b981;
+}
+
+.checkbox-wrapper input[type="checkbox"]:checked::after {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 2px;
+  width: 4px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* Bulk Actions */
+.bulk-actions {
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.delete-selected-button {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  border-radius: 0.75rem;
+  padding: 0.75rem 1.5rem;
+  color: #fca5a5;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: all 0.3s;
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.2);
+}
+
+.delete-selected-button:hover {
+  background: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.6);
+  transform: translateY(-2px);
+  box-shadow: 0 0 30px rgba(239, 68, 68, 0.4);
+}
+
+/* Theme Variables */
+:root {
+  --bg-primary: #0a0a0f;
+  --bg-secondary: rgba(20, 20, 28, 0.6);
+  --bg-card: rgba(30, 30, 40, 0.5);
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --border-primary: rgba(255, 255, 255, 0.1);
+}
+
+body.light-theme {
+  background: #f5f5f7;
+  color: #1c1c1e;
+}
+
+body.light-theme::before {
+  background:
+    radial-gradient(circle at 20% 50%, rgba(200, 200, 210, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(180, 180, 190, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 40% 20%, rgba(220, 220, 230, 0.1) 0%, transparent 50%);
+}
+
+body.light-theme .app-header,
+body.light-theme .status-bar {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+body.light-theme .header-title h1 {
+  background: linear-gradient(135deg, #3f3f46 0%, #52525b 50%, #71717a 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+body.light-theme .session-list {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+body.light-theme .sidebar {
+  background: rgba(245, 245, 247, 0.95);
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+body.light-theme .session-card {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+body.light-theme .session-card:hover {
+  background: rgba(250, 250, 252, 1);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light-theme .project-name,
+body.light-theme .badge,
+body.light-theme .message-content {
+  color: #1c1c1e;
+}
+
+body.light-theme .session-id,
+body.light-theme .message-type,
+body.light-theme .time-ago,
+body.light-theme .session-count,
+body.light-theme .status-text {
+  color: #6e6e73;
+}
+
+body.light-theme .tab {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #6e6e73;
+}
+
+body.light-theme .tab:hover {
+  background: rgba(0, 0, 0, 0.1);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light-theme .project-name-edit {
+  color: #1c1c1e;
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light-theme .setting-item {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+body.light-theme .setting-item:hover {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light-theme .setting-item span {
+  color: #1c1c1e;
+}
+
+body.light-theme .setting-item-text {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+body.light-theme .setting-item input[type="text"] {
+  color: #1c1c1e;
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.25);
+}
+
+body.light-theme .notification-settings h3 {
+  color: #1c1c1e;
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+  position: fixed;
+  bottom: 125px;
+  right: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(82, 82, 91, 0.2);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border: 1px solid rgba(82, 82, 91, 0.4);
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 8px 32px rgba(82, 82, 91, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  z-index: 1000;
+  -webkit-app-region: no-drag;
+}
+
+.theme-toggle:hover {
+  transform: scale(1.1);
+  background: rgba(82, 82, 91, 0.3);
+  box-shadow:
+    0 12px 48px rgba(82, 82, 91, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.15),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+.theme-toggle svg {
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.theme-toggle:hover svg {
+  transform: rotate(180deg);
+}
+
+body.light-theme .theme-toggle {
+  background: rgba(255, 255, 255, 0.8);
+  border-color: rgba(0, 0, 0, 0.1);
+  color: #1c1c1e;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .app-main {
@@ -970,5 +1414,14 @@ body::before {
 
   .setup-button {
     width: 100%;
+  }
+
+  .tabs {
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    flex: 1;
+    min-width: 100px;
   }
 }

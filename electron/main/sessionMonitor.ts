@@ -36,6 +36,9 @@ export class SessionMonitor extends EventEmitter {
   private processMonitor: ClaudeProcessMonitor | null = null;
   private historyMonitor: ClaudeHistoryMonitor | null = null;
   private codexMonitor: CodexMonitor | null = null;
+  private fileChangeDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
+  private lastEmitTime: number = 0;
+  private emitThrottleMs: number = 500;
 
   constructor() {
     super();
@@ -107,8 +110,8 @@ export class SessionMonitor extends EventEmitter {
       .on('unlink', (filePath) => this.handleFileRemoved(filePath))
       .on('error', (error) => console.error('Watcher error:', error));
 
-    // Set up periodic status updates
-    setInterval(() => this.updateSessionStatuses(), 1000);
+    // Set up periodic status updates (reduced from 1s to 5s to prevent flickering)
+    setInterval(() => this.updateSessionStatuses(), 5000);
 
     // Periodic cleanup of old sessions
     setInterval(() => this.cleanupOldSessions(), 60000); // Every minute
@@ -139,15 +142,35 @@ export class SessionMonitor extends EventEmitter {
 
   private async handleFileChange(filePath: string): Promise<void> {
     console.log('Session file changed:', path.basename(filePath));
-    await this.processSessionFile(filePath);
-    this.emit('sessions-updated', this.getSessions());
+
+    // Debounce rapid file changes (e.g., from pre/post tool hooks)
+    const existingTimer = this.fileChangeDebounceTimers.get(filePath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+
+    const timer = setTimeout(async () => {
+      await this.processSessionFile(filePath);
+      this.emitSessionsUpdatedThrottled();
+      this.fileChangeDebounceTimers.delete(filePath);
+    }, 500); // 500ms debounce
+
+    this.fileChangeDebounceTimers.set(filePath, timer);
   }
 
   private handleFileRemoved(filePath: string): void {
     const sessionId = path.basename(filePath, '.json');
     console.log('Session file removed:', sessionId);
     this.sessions.delete(sessionId);
-    this.emit('sessions-updated', this.getSessions());
+    this.emitSessionsUpdatedThrottled();
+  }
+
+  private emitSessionsUpdatedThrottled(): void {
+    const now = Date.now();
+    if (now - this.lastEmitTime >= this.emitThrottleMs) {
+      this.lastEmitTime = now;
+      this.emit('sessions-updated', this.getSessions());
+    }
   }
 
   private async processSessionFile(filePath: string): Promise<void> {
@@ -182,23 +205,18 @@ export class SessionMonitor extends EventEmitter {
         };
       }
 
-      // Calculate status
+      // Calculate status based on actual last activity time
       let status: SessionStatus;
-      let finalLastActivity = lastActivity.toISOString();
+      const finalLastActivity = lastActivity.toISOString();
 
       if (hookSession.status === 'completed') {
         status = SessionStatus.Stopped;
       } else if (hookSession.status === 'idle') {
         status = SessionStatus.Stopped;
       } else {
-        // Check if truly active based on last activity
+        // Check if truly active based on last activity (don't reset the timestamp)
         const secondsSinceActivity = (Date.now() - lastActivity.getTime()) / 1000;
         status = secondsSinceActivity < 300 ? SessionStatus.Active : SessionStatus.Stopped;
-
-        // If active, use current time as last activity
-        if (status === SessionStatus.Active) {
-          finalLastActivity = new Date().toISOString();
-        }
       }
 
       const session: Session = {
@@ -249,7 +267,7 @@ export class SessionMonitor extends EventEmitter {
     }
 
     if (hasChanges) {
-      this.emit('sessions-updated', this.getSessions());
+      this.emitSessionsUpdatedThrottled();
     }
   }
 
@@ -327,7 +345,7 @@ export class SessionMonitor extends EventEmitter {
       // Always update process sessions to keep them current
       this.sessions.set(sessionId, session);
     }
-    this.emit('sessions-updated', this.getSessions());
+    this.emitSessionsUpdatedThrottled();
   }
 
   private mergeHistorySessions(historySessions: any[]): void {
@@ -361,7 +379,7 @@ export class SessionMonitor extends EventEmitter {
         this.sessions.set(sessionId, session);
       }
     }
-    this.emit('sessions-updated', this.getSessions());
+    this.emitSessionsUpdatedThrottled();
   }
 
   private mergeCodexSession(codexSession: Session, suppressEmit = false): boolean {
@@ -385,7 +403,7 @@ export class SessionMonitor extends EventEmitter {
     }
 
     if (changed && !suppressEmit) {
-      this.emit('sessions-updated', this.getSessions());
+      this.emitSessionsUpdatedThrottled();
     }
 
     return changed;

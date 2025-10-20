@@ -196,7 +196,8 @@ app.whenReady().then(async () => {
       log(`Spawning: ${command} ${projectPath}`);
       const child = spawn(command, [projectPath], {
         detached: true,
-        stdio: 'pipe'
+        stdio: 'pipe',
+        shell: true
       });
 
       child.stderr?.on('data', (data) => {
@@ -338,7 +339,8 @@ app.whenReady().then(async () => {
             log(`Opening worktree: ${command} ${worktreePath}`);
             const openProcess = spawn(command, [worktreePath], {
               detached: true,
-              stdio: 'pipe'
+              stdio: 'pipe',
+              shell: true
             });
 
             openProcess.on('error', (error) => {

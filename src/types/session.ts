@@ -15,6 +15,8 @@ export interface Message {
   type: MessageType;
 }
 
+export type TabCategory = 'current' | 'on-hold' | 'archive';
+
 export interface Session {
   id: string;
   projectPath: string;
@@ -35,8 +37,14 @@ export interface Session {
     description: string;
   }>;
   finalResponse?: string;
-  source?: 'hook' | 'process' | 'history' | 'codex';
+  source?: 'hook' | 'process' | 'history' | 'codex' | 'manual';
   gitBranch?: string;
   gitRepo?: string;
   filePath?: string; // Optional for backward compatibility
+
+  // New fields for enhanced organization
+  tabCategory?: TabCategory; // Where the session is organized
+  isManual?: boolean; // If this is a manually created session
+  customName?: string; // User-editable name (overrides projectName)
+  lastManualActiveTime?: string; // For tracking manual session auto-deactivation
 }

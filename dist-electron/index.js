@@ -269,7 +269,9 @@ class CodexMonitor extends events.EventEmitter {
     __publicField(this, "watcher", null);
     __publicField(this, "sessions", /* @__PURE__ */ new Map());
     __publicField(this, "fileToSessionId", /* @__PURE__ */ new Map());
+    __publicField(this, "fileMtimes", /* @__PURE__ */ new Map());
     __publicField(this, "statusInterval", null);
+    __publicField(this, "pollInterval", null);
     this.sessionsDir = path__namespace.join(os__namespace.homedir(), ".codex", "sessions");
   }
   async startWatching() {
@@ -288,6 +290,7 @@ class CodexMonitor extends events.EventEmitter {
     });
     this.watcher.on("add", (filePath) => this.safeProcessFile(filePath, "add")).on("change", (filePath) => this.safeProcessFile(filePath, "change")).on("unlink", (filePath) => this.handleFileRemoved(filePath)).on("error", (error) => console.error("[CodexMonitor] Watch error:", error));
     this.statusInterval = setInterval(() => this.markStaleSessions(), 6e4);
+    this.pollInterval = setInterval(() => this.pollRolloutFiles(), 1e4);
     console.log("[CodexMonitor] Watching", this.sessionsDir);
   }
   stopWatching() {
@@ -299,8 +302,13 @@ class CodexMonitor extends events.EventEmitter {
       clearInterval(this.statusInterval);
       this.statusInterval = null;
     }
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
     this.sessions.clear();
     this.fileToSessionId.clear();
+    this.fileMtimes.clear();
     console.log("[CodexMonitor] Codex monitoring stopped");
   }
   getSessions() {
@@ -345,6 +353,8 @@ class CodexMonitor extends events.EventEmitter {
     if (!fs__namespace.existsSync(filePath)) {
       return;
     }
+    const stat = fs__namespace.statSync(filePath);
+    this.fileMtimes.set(filePath, stat.mtimeMs);
     const raw = fs__namespace.readFileSync(filePath, "utf8");
     if (!raw.trim()) {
       return;
@@ -499,17 +509,22 @@ class CodexMonitor extends events.EventEmitter {
       this.emit("session-updated", session);
     }
     this.fileToSessionId.delete(filePath);
+    this.fileMtimes.delete(filePath);
   }
   normalizeTimestamp(raw) {
     if (!raw || typeof raw !== "string") {
       return null;
     }
-    let normalized = raw;
-    normalized = normalized.replace(
+    const trimmed = raw.trim();
+    const direct = new Date(trimmed);
+    if (!Number.isNaN(direct.getTime())) {
+      return direct.toISOString();
+    }
+    let normalized = trimmed.replace(
       /(T\d{2})-(\d{2})-(\d{2})(\.[0-9A-Za-z:+-]+)?/,
       (_match, hour, minute, second, fraction = "") => `${hour}:${minute}:${second}${fraction}`
     );
-    if (!/[Z+-]$/.test(normalized)) {
+    if (!/(Z|[+-]\d{2}:?\d{2})$/i.test(normalized)) {
       normalized += "Z";
     }
     const parsed = new Date(normalized);
@@ -563,6 +578,22 @@ class CodexMonitor extends events.EventEmitter {
       this.emit("session-updated", session);
     });
   }
+  pollRolloutFiles() {
+    for (const filePath of this.fileToSessionId.keys()) {
+      try {
+        if (!fs__namespace.existsSync(filePath)) {
+          continue;
+        }
+        const currentMtime = fs__namespace.statSync(filePath).mtimeMs;
+        const lastMtime = this.fileMtimes.get(filePath) || 0;
+        if (currentMtime > lastMtime + 1) {
+          this.safeProcessFile(filePath, "poll");
+        }
+      } catch (error) {
+        console.error("[CodexMonitor] Poll error:", error);
+      }
+    }
+  }
 }
 class SessionMonitor extends events.EventEmitter {
   constructor() {
@@ -573,6 +604,9 @@ class SessionMonitor extends events.EventEmitter {
     __publicField(this, "processMonitor", null);
     __publicField(this, "historyMonitor", null);
     __publicField(this, "codexMonitor", null);
+    __publicField(this, "fileChangeDebounceTimers", /* @__PURE__ */ new Map());
+    __publicField(this, "lastEmitTime", 0);
+    __publicField(this, "emitThrottleMs", 500);
     this.sessionsDir = path__namespace.join(os__namespace.homedir(), ".claude", "active_sessions");
     this.processMonitor = new ClaudeProcessMonitor();
     this.historyMonitor = new ClaudeHistoryMonitor();
@@ -618,7 +652,7 @@ class SessionMonitor extends events.EventEmitter {
       ignoreInitial: true
     });
     this.watcher.on("add", (filePath) => this.handleFileChange(filePath)).on("change", (filePath) => this.handleFileChange(filePath)).on("unlink", (filePath) => this.handleFileRemoved(filePath)).on("error", (error) => console.error("Watcher error:", error));
-    setInterval(() => this.updateSessionStatuses(), 1e3);
+    setInterval(() => this.updateSessionStatuses(), 5e3);
     setInterval(() => this.cleanupOldSessions(), 6e4);
   }
   async scanDirectory() {
@@ -641,14 +675,29 @@ class SessionMonitor extends events.EventEmitter {
   }
   async handleFileChange(filePath) {
     console.log("Session file changed:", path__namespace.basename(filePath));
-    await this.processSessionFile(filePath);
-    this.emit("sessions-updated", this.getSessions());
+    const existingTimer = this.fileChangeDebounceTimers.get(filePath);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    const timer = setTimeout(async () => {
+      await this.processSessionFile(filePath);
+      this.emitSessionsUpdatedThrottled();
+      this.fileChangeDebounceTimers.delete(filePath);
+    }, 500);
+    this.fileChangeDebounceTimers.set(filePath, timer);
   }
   handleFileRemoved(filePath) {
     const sessionId = path__namespace.basename(filePath, ".json");
     console.log("Session file removed:", sessionId);
     this.sessions.delete(sessionId);
-    this.emit("sessions-updated", this.getSessions());
+    this.emitSessionsUpdatedThrottled();
+  }
+  emitSessionsUpdatedThrottled() {
+    const now = Date.now();
+    if (now - this.lastEmitTime >= this.emitThrottleMs) {
+      this.lastEmitTime = now;
+      this.emit("sessions-updated", this.getSessions());
+    }
   }
   async processSessionFile(filePath) {
     var _a, _b;
@@ -679,7 +728,7 @@ class SessionMonitor extends events.EventEmitter {
         };
       }
       let status;
-      let finalLastActivity = lastActivity.toISOString();
+      const finalLastActivity = lastActivity.toISOString();
       if (hookSession.status === "completed") {
         status = SessionStatus.Stopped;
       } else if (hookSession.status === "idle") {
@@ -687,9 +736,6 @@ class SessionMonitor extends events.EventEmitter {
       } else {
         const secondsSinceActivity = (Date.now() - lastActivity.getTime()) / 1e3;
         status = secondsSinceActivity < 300 ? SessionStatus.Active : SessionStatus.Stopped;
-        if (status === SessionStatus.Active) {
-          finalLastActivity = (/* @__PURE__ */ new Date()).toISOString();
-        }
       }
       const session = {
         id: sessionId,
@@ -730,7 +776,7 @@ class SessionMonitor extends events.EventEmitter {
       }
     }
     if (hasChanges) {
-      this.emit("sessions-updated", this.getSessions());
+      this.emitSessionsUpdatedThrottled();
     }
   }
   cleanupOldSessions() {
@@ -789,7 +835,7 @@ class SessionMonitor extends events.EventEmitter {
       console.log(`Process session ${ps.projectName}: status=${status}, lastActivity=${lastActivity}, hasHookData=${hasHookData}`);
       this.sessions.set(sessionId, session);
     }
-    this.emit("sessions-updated", this.getSessions());
+    this.emitSessionsUpdatedThrottled();
   }
   mergeHistorySessions(historySessions) {
     for (const hs of historySessions) {
@@ -817,7 +863,7 @@ class SessionMonitor extends events.EventEmitter {
         this.sessions.set(sessionId, session);
       }
     }
-    this.emit("sessions-updated", this.getSessions());
+    this.emitSessionsUpdatedThrottled();
   }
   mergeCodexSession(codexSession, suppressEmit = false) {
     const existingSession = this.sessions.get(codexSession.id);
@@ -835,7 +881,7 @@ class SessionMonitor extends events.EventEmitter {
       }
     }
     if (changed && !suppressEmit) {
-      this.emit("sessions-updated", this.getSessions());
+      this.emitSessionsUpdatedThrottled();
     }
     return changed;
   }
@@ -1052,7 +1098,8 @@ electron.app.whenReady().then(async () => {
       log(`Spawning: ${command} ${projectPath}`);
       const child = spawn(command, [projectPath], {
         detached: true,
-        stdio: "pipe"
+        stdio: "pipe",
+        shell: true
       });
       (_a = child.stderr) == null ? void 0 : _a.on("data", (data) => {
         log(`open-project stderr: ${data.toString()}`);
@@ -1156,7 +1203,8 @@ electron.app.whenReady().then(async () => {
             log(`Opening worktree: ${command} ${worktreePath}`);
             const openProcess = spawn(command, [worktreePath], {
               detached: true,
-              stdio: "pipe"
+              stdio: "pipe",
+              shell: true
             });
             openProcess.on("error", (error) => {
               log(`open worktree spawn error: ${error.message}`);
